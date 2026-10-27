@@ -1,0 +1,31 @@
+# Secrets: never commit real keys
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Runtime data and generated outputs
+data/
+
+# Throwaway pre-kickoff checks (not part of the submission)
+prep/
+
+# Local scratch (planning prompts and personal notes)
+tmp/
+
+# OS / editor noise
+.DS_Store
+*.swp
+.idea/

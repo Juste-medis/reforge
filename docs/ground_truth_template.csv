@@ -1,0 +1,11 @@
+part_id,state,feature_id,dimension,reading_1_mm,reading_2_mm,reading_3_mm,instrument,method,measured_by,date,notes
+P1,intact,outline,overall_length,,,,digital caliper 0.01 mm,outside jaws,,,
+P1,intact,outline,overall_width,,,,digital caliper 0.01 mm,outside jaws,,,
+P1,intact,body,thickness_at_A,,,,digital caliper 0.01 mm,outside jaws,,,location A:
+P1,intact,body,thickness_at_B,,,,digital caliper 0.01 mm,outside jaws,,,location B:
+P1,intact,body,thickness_at_C,,,,digital caliper 0.01 mm,outside jaws,,,location C:
+P1,intact,H1,hole_diameter,,,,digital caliper 0.01 mm,inside jaws,,,
+P1,intact,H2,hole_diameter,,,,digital caliper 0.01 mm,inside jaws,,,
+P1,intact,H1-H2,far_edge_distance_L_far,,,,digital caliper 0.01 mm,inside jaws,,,centre distance = L_far - (D1+D2)/2
+P1,intact,H1,edge_to_hole_near_side,,,,digital caliper 0.01 mm,depth rod / step,,,centre to edge = value + D1/2
+P1,intact,H2,edge_to_hole_near_side,,,,digital caliper 0.01 mm,depth rod / step,,,centre to edge = value + D2/2

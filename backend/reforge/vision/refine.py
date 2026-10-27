@@ -1,0 +1,208 @@
+"""Metrology-grade part boundary from a coarse mask, on the rectified mat view.
+
+The segmenter (SAM 3.1 in production) decides *what* the part is. This module decides *where* its edges
+are, to sub-pixel precision, using the known mat background. The coarse mask only bounds the search:
+the boundary can move at most ``band_mm`` from it, so a shadow or reflection can't drag it far.
+
+Edge model: each pixel's Lab colour is projected onto the line from the paper colour to the part colour,
+giving t ≈ 0 on paper and t ≈ 1 on the part. For a symmetric blur, the true edge is where t = 0.5.
+Through-holes are paper seen through the part, so they're found from colour, even when the coarse
+mask filled them in.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+from shapely.geometry import Point, Polygon
+from skimage.measure import find_contours
+
+from reforge.capture.calibration import RectifiedView
+from reforge.errors import ReforgeError
+
+MIN_CONTRAST_DELTA_E = 12.0
+MIN_BACKGROUND_PIXELS = 500
+GLARE_FRACTION = 0.3
+BAND_SATURATION_FRACTION = 0.05
+
+
+@dataclass(frozen=True)
+class Contour:
+    points_mm: np.ndarray  # (N, 2) closed polyline; the first point is not repeated
+    area_mm2: float
+
+    @property
+    def polygon(self) -> Polygon:
+        return Polygon(self.points_mm)
+
+
+@dataclass(frozen=True)
+class HoleCandidate:
+    hole_id: str
+    contour: Contour
+    mask_agrees: bool  # the coarse mask also excludes this region
+    glare_suspect: bool  # brighter than the paper: possibly a highlight, not a hole
+
+
+@dataclass(frozen=True)
+class ProfileWarning:
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class RefinedProfile:
+    outer: Contour
+    holes: tuple[HoleCandidate, ...]
+    band_mm: float
+    contrast_delta_e: float  # colour distance between part and paper (CIE Lab)
+    coarse_shift_mean_mm: float  # how far refinement moved the coarse boundary
+    coarse_shift_max_mm: float
+    refined: bool  # False if contrast was too low and the coarse boundary was kept
+    warnings: tuple[ProfileWarning, ...]
+
+
+def _disk(radius_px: int) -> np.ndarray:
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius_px + 1, 2 * radius_px + 1))
+
+
+def _fill_holes(mask: np.ndarray) -> np.ndarray:
+    """The mask with every enclosed hole filled, as uint8."""
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    filled = np.zeros(mask.shape, np.uint8)
+    cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
+    return filled | mask.astype(np.uint8)
+
+
+def _signed_area(points: np.ndarray) -> float:
+    x, y = points[:, 0], points[:, 1]
+    return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(np.roll(x, -1), y))
+
+
+def refine_profile(
+    view: RectifiedView,
+    coarse_mask: np.ndarray,
+    *,
+    band_mm: float = 0.3,
+    min_hole_area_mm2: float = 0.8,
+    background_margin_mm: float = 2.0,
+) -> RefinedProfile:
+    image = view.image
+    if image.ndim != 3:
+        raise ReforgeError("IMAGE_INVALID", "Boundary refinement needs a colour (BGR) rectified view.")
+    mask = np.asarray(coarse_mask).astype(bool)
+    if mask.shape != image.shape[:2]:
+        raise ReforgeError("PROFILE_MASK_SHAPE", f"Mask shape {mask.shape} != view shape {image.shape[:2]}.")
+    if not mask.any():
+        raise ReforgeError("PROFILE_EMPTY_MASK", "The segmentation mask is empty.",
+                           "Click on the part to give the segmenter a point prompt.")
+
+    s = view.px_per_mm
+    band_px = max(2, int(np.ceil(band_mm * s)))
+    kernel = _disk(band_px)
+    # Geometry comes from the outline with its holes filled. Holes are then found by colour, whether or not the
+    # segmenter left them open: a mask's hole edges can sit several pixels off the true edge (live SAM 3.1 finding,
+    # 2026-10-27), and the narrow band would otherwise clip the real edge. The original mask is kept as evidence.
+    m8 = _fill_holes(mask)
+    dilated = cv2.dilate(m8, kernel).astype(bool)
+    eroded = cv2.erode(m8, kernel).astype(bool)
+    background = ~cv2.dilate(m8, _disk(max(band_px + 1, int(np.ceil(background_margin_mm * s))))).astype(bool)
+    if background.sum() < MIN_BACKGROUND_PIXELS:
+        raise ReforgeError("PROFILE_NO_BACKGROUND", "Too little visible mat around the part.",
+                           "Centre the part in the mat's free zone with space around it.")
+
+    lab = cv2.cvtColor(image.astype(np.float32) / 255.0, cv2.COLOR_BGR2Lab)
+    paper = np.median(lab[background], axis=0)
+    solid = cv2.erode(mask.astype(np.uint8), kernel).astype(bool)  # plastic only, so holes don't bias the colour
+    interior = lab[solid] if solid.any() else lab[mask]
+    part = np.median(interior, axis=0)
+    direction = part - paper
+    contrast = float(np.linalg.norm(direction))
+    warnings: list[ProfileWarning] = []
+
+    refined = contrast >= MIN_CONTRAST_DELTA_E
+    if refined:
+        t = ((lab - paper) @ direction) / contrast**2
+    else:
+        warnings.append(ProfileWarning(
+            "PROFILE_LOW_CONTRAST",
+            f"Part and mat differ by only ΔE {contrast:.1f}; the segmenter's boundary is kept unrefined. "
+            "Use a contrasting background for light-coloured parts."))
+        t = mask.astype(np.float32)
+
+    # Through-hole seeds: paper-coloured regions well inside the part.
+    min_hole_px = min_hole_area_mm2 * s * s
+    seeds = (eroded & (t < 0.5)).astype(np.uint8)
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(seeds, connectivity=8)
+    hole_regions = np.zeros_like(seeds)
+    for label in range(1, n_labels):
+        if stats[label, cv2.CC_STAT_AREA] >= min_hole_px:
+            hole_regions[labels == label] = 1
+    hole_zone = cv2.dilate(hole_regions, kernel).astype(bool) & dilated
+
+    field = np.zeros(mask.shape, np.float32)
+    field[eroded] = 1.0
+    edge_band = dilated & ~eroded
+    t_clipped = np.clip(t, 0.0, 1.0).astype(np.float32)
+    field[edge_band] = t_clipped[edge_band]
+    field[hole_zone] = t_clipped[hole_zone]
+
+    padded = np.pad(field, 1)
+    contours = [c[:, ::-1] - 1.0 for c in find_contours(padded, 0.5)]  # (row, col) → (x, y) px
+    contours = [c[:-1] if np.allclose(c[0], c[-1]) else c for c in contours if len(c) >= 4]
+    if not contours:
+        raise ReforgeError("PROFILE_NO_CONTOUR", "No closed part boundary was found.", "Retake the photo.")
+
+    in_mm = [view.px_to_mm(c) for c in contours]
+    areas = [abs(_signed_area(c)) for c in in_mm]
+    outer_idx = int(np.argmax(areas))
+    outer_pts = in_mm[outer_idx]
+    if _signed_area(outer_pts) < 0:
+        outer_pts = outer_pts[::-1]
+    outer = Contour(outer_pts, areas[outer_idx])
+    outer_poly = outer.polygon.buffer(0)
+
+    others = [i for i in range(len(in_mm)) if i != outer_idx and areas[i] >= min_hole_area_mm2]
+    big_outside = [i for i in others if not outer_poly.contains(Point(in_mm[i].mean(axis=0)))]
+    if big_outside:
+        warnings.append(ProfileWarning(
+            "PROFILE_MULTIPLE_REGIONS", f"{len(big_outside)} other region(s) ignored; only the largest part is used."))
+
+    paper_l_sigma = 1.4826 * float(np.median(np.abs(lab[background][:, 0] - paper[0]))) + 1.0
+    holes: list[HoleCandidate] = []
+    for i in (i for i in others if i not in big_outside):
+        pts = in_mm[i]
+        if _signed_area(pts) > 0:
+            pts = pts[::-1]
+        region = np.zeros(mask.shape, np.uint8)
+        cv2.fillPoly(region, [np.round(view.mm_to_px(pts)).astype(np.int32)], 1)
+        inside = region.astype(bool)
+        if not inside.any():
+            continue
+        bright = image.max(axis=2)[inside]
+        glare = float(((lab[inside][:, 0] > paper[0] + 3 * paper_l_sigma) | (bright >= 250)).mean()) > GLARE_FRACTION
+        agrees = float((~mask[inside]).mean()) > 0.5
+        holes.append(HoleCandidate(f"H{len(holes)}", Contour(pts, areas[i]), agrees, glare))
+
+    coarse_edge = m8 - cv2.erode(m8, _disk(1))
+    distance = cv2.distanceTransform((1 - coarse_edge).astype(np.uint8), cv2.DIST_L2, 5)
+    outer_px = np.clip(np.round(view.mm_to_px(outer.points_mm)).astype(int), 0,
+                       np.array(mask.shape[::-1]) - 1)
+    shift_px = distance[outer_px[:, 1], outer_px[:, 0]]
+    if refined and float((shift_px >= band_px - 0.5).mean()) > BAND_SATURATION_FRACTION:
+        warnings.append(ProfileWarning(
+            "PROFILE_BAND_SATURATED",
+            "Parts of the boundary hit the refinement limit; the segmentation mask may be misaligned there."))
+
+    return RefinedProfile(
+        outer=outer,
+        holes=tuple(holes),
+        band_mm=band_px / s,
+        contrast_delta_e=contrast,
+        coarse_shift_mean_mm=float(shift_px.mean()) / s,
+        coarse_shift_max_mm=float(shift_px.max()) / s,
+        refined=refined,
+        warnings=tuple(warnings),
+    )

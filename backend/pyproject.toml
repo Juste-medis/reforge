@@ -1,0 +1,54 @@
+[project]
+name = "reforge"
+version = "0.1.0"
+description = "RE-FORGE AI: calibrated photo metrology and evidence-labelled reconstruction of broken plastic parts"
+requires-python = "==3.12.*"
+dependencies = [
+    "fastapi>=0.161,<1",
+    "fpdf2>=2.8.9,<3",
+    "httpx>=0.28,<1",
+    "manifold3d>=3.5,<4",
+    "meta-sam-parser==0.1.0",
+    "numpy>=2.5,<3",
+    "openai>=3.37,<4",
+    "opencv-contrib-python-headless>=4.14,<5",
+    "pydantic>=2.14,<3",
+    "pydantic-settings>=2.16,<3",
+    "python-multipart>=0.0.32",
+    "scikit-image>=0.26,<0.27",
+    "shapely>=2.2,<3",
+    "trimesh>=5.1,<6",
+    "uvicorn[standard]>=0.54,<1",
+]
+
+[project.scripts]
+reforge = "reforge.cli:main"
+reforge-mat = "reforge.capture.mat:main"
+reforge-api = "reforge.api.app:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["reforge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["live: makes real Meta Model API calls (costs money; needs META_MODEL_API_KEY)"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]
+
+[dependency-groups]
+dev = [
+    "pypdfium2>=5.14.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
