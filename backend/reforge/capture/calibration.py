@@ -12,10 +12,12 @@ import cv2
 import numpy as np
 
 from reforge.capture.mat import ARUCO_DICTIONARY, MARKERS_PER_MAT, MatLayout, mat_layout, pages_for_ids
+from reforge.capture.photometry import linear_to_srgb, srgb_to_linear
 from reforge.errors import ReforgeError
 
 MIN_MARKERS = 4
 RANSAC_THRESHOLD_MM = 1.0
+CORNER_BIAS_ITERATIONS = 4
 SCALE_CORRECTION_RANGE = (0.9, 1.1)
 
 # Warning thresholds. They are conservative starting points, to be revisited with real photos.
@@ -51,6 +53,18 @@ class Calibration:
     perspective_ratio: float  # max/min local resolution over the free-zone corners; 1.0 = parallel
     scale_correction: tuple[float, float]  # (x, y) factors from the caliper-checked bars
     warnings: tuple[CalibrationWarning, ...] = field(default=())
+    # The marker correspondences behind the fit, per marker (n, 4, 2): de-biased image px and nominal mat mm.
+    points_px: np.ndarray | None = field(default=None, repr=False)
+    points_mm: np.ndarray | None = field(default=None, repr=False)
+    # How far inside the true corners the detector put them, along each marker's diagonal (px); fitted jointly
+    # with the homography. Edge blur in linear light pulls sub-pixel corners about 0.9 px inwards (simulated
+    # 2026-10-27); a print's dot gain pushes them out.
+    corner_bias_px: float = 0.0
+
+    @property
+    def mm_to_px(self) -> np.ndarray:
+        """Physical mat mm → image px."""
+        return np.linalg.inv(self.homography)
 
     def image_to_mat(self, points_px: np.ndarray) -> np.ndarray:
         return _apply(self.homography, points_px)
@@ -150,6 +164,30 @@ def _fit(src_px: np.ndarray, dst_mm: np.ndarray) -> np.ndarray | None:
     return h
 
 
+def _diagonals(corners_px: np.ndarray) -> np.ndarray:
+    """Unit vectors from each marker's centre to its corners, (n, 4, 2)."""
+    out = corners_px - corners_px.mean(axis=1, keepdims=True)
+    return out / np.linalg.norm(out, axis=2, keepdims=True)
+
+
+def _fit_debiased(corners_px: np.ndarray, corners_mm: np.ndarray) -> tuple[np.ndarray | None, float]:
+    """Homography plus a shared corner bias along the marker diagonals, fitted jointly.
+
+    A sub-pixel corner detector sees a blurred black square slightly smaller (or, with printer dot gain, larger)
+    than it is, the same amount in pixels on every marker. That's symmetric about each marker's centre, so it
+    barely moves the homography, but it dominates the residuals unless it's modelled.
+    """
+    unit = _diagonals(corners_px)
+    bias, h = 0.0, None
+    for _ in range(CORNER_BIAS_ITERATIONS):
+        h = _fit((corners_px + bias * unit).reshape(-1, 2), corners_mm.reshape(-1, 2))
+        if h is None:
+            return None, bias
+        predicted = _apply(np.linalg.inv(h), corners_mm.reshape(-1, 2)).reshape(corners_px.shape)
+        bias = float(np.mean(np.sum((predicted - corners_px) * unit, axis=2)))
+    return h, bias
+
+
 def _local_px_per_mm(mm_to_px: np.ndarray, point_mm: tuple[float, float]) -> float:
     """sqrt(|det J|) of the mm→px homography at ``point_mm``: the local linear resolution."""
     x, y = point_mm
@@ -211,22 +249,22 @@ def calibrate(
         src = np.concatenate([d.corners_px for d in detections])
         dst = np.concatenate([layout.marker(d.marker_id).corners_mm() for d in detections])
 
-    h_nominal = _fit(src, dst)
+    corners_px, corners_mm = src.reshape(-1, 4, 2), dst.reshape(-1, 4, 2)
+    h_nominal, corner_bias = _fit_debiased(corners_px, corners_mm)
     if h_nominal is None:
         raise ReforgeError("CAL_HOMOGRAPHY_FAILED", "The mat geometry could not be fitted.", "Retake the photo.")
-    errors = np.linalg.norm(_apply(h_nominal, src) - dst, axis=1)
+    debiased = corners_px + corner_bias * _diagonals(corners_px)
+    errors = np.linalg.norm(_apply(h_nominal, debiased.reshape(-1, 2)) - dst, axis=1)
 
     loo_rms: float | None = None
     if len(detections) >= 5:
         loo_errors = []
         for k in range(len(detections)):
-            rest = [d for j, d in enumerate(detections) if j != k]
-            h_k = _fit(np.concatenate([d.corners_px for d in rest]),
-                       np.concatenate([layout.marker(d.marker_id).corners_mm() for d in rest]))
+            rest = np.arange(len(detections)) != k
+            h_k, bias_k = _fit_debiased(corners_px[rest], corners_mm[rest])
             if h_k is not None:
-                held_out = detections[k]
-                predicted = _apply(h_k, held_out.corners_px)
-                loo_errors.append(np.linalg.norm(predicted - layout.marker(held_out.marker_id).corners_mm(), axis=1))
+                held_out = corners_px[k] + bias_k * _diagonals(corners_px[k:k + 1])[0]
+                loo_errors.append(np.linalg.norm(_apply(h_k, held_out) - corners_mm[k], axis=1))
         if loo_errors:
             loo_rms = float(np.sqrt(np.mean(np.concatenate(loo_errors) ** 2)))
 
@@ -284,6 +322,9 @@ def calibrate(
         perspective_ratio=perspective_ratio,
         scale_correction=(sx, sy),
         warnings=tuple(warnings),
+        points_px=debiased,
+        points_mm=corners_mm,
+        corner_bias_px=corner_bias,
     )
 
 
@@ -295,7 +336,8 @@ def rectify(
 ) -> RectifiedView:
     """Resample ``region_mm`` (default: the free zone) to a top-down metric image.
 
-    The default resolution follows the photo's native resolution, so no detail is invented.
+    The default resolution follows the photo's native resolution, so no detail is invented. Interpolation runs in
+    linear light, so resampling doesn't shift edges the way blending sRGB-encoded values would.
     """
     if region_mm is None:
         x0, y0, x1, y1 = calibration.layout.free_zone_mm
@@ -306,6 +348,18 @@ def rectify(
         px_per_mm = float(np.clip(np.floor(calibration.px_per_mm * 2) / 2, 4.0, 20.0))
     to_out = np.array([[px_per_mm, 0, -x0 * px_per_mm], [0, px_per_mm, -y0 * px_per_mm], [0, 0, 1.0]])
     size = (int(round((x1 - x0) * px_per_mm)), int(round((y1 - y0) * px_per_mm)))
-    out = cv2.warpPerspective(image, to_out @ calibration.homography, size, flags=cv2.INTER_CUBIC,
+    image_to_out = to_out @ calibration.homography
+    # Only the photo pixels the region maps from are converted to linear light.
+    w, h = size
+    src = _apply(np.linalg.inv(image_to_out), np.array([[0, 0], [w, 0], [w, h], [0, h]], np.float64))
+    cx0, cy0 = np.clip(np.floor(src.min(axis=0)).astype(int) - 4, 0, None)
+    cx1 = int(np.clip(np.ceil(src[:, 0].max()) + 5, cx0 + 1, image.shape[1]))
+    cy1 = int(np.clip(np.ceil(src[:, 1].max()) + 5, cy0 + 1, image.shape[0]))
+    cx0, cy0 = min(int(cx0), cx1 - 1), min(int(cy0), cy1 - 1)
+    crop = np.ascontiguousarray(image[cy0:cy1, cx0:cx1])
+    if crop.dtype != np.uint8:
+        raise ReforgeError("IMAGE_INVALID", "Rectification expects an 8-bit photo.")
+    from_crop = image_to_out @ np.array([[1, 0, cx0], [0, 1, cy0], [0, 0, 1.0]])
+    out = cv2.warpPerspective(srgb_to_linear(crop), from_crop, size, flags=cv2.INTER_CUBIC,
                               borderMode=cv2.BORDER_REPLICATE)
-    return RectifiedView(out, px_per_mm, (x0, y0))
+    return RectifiedView(linear_to_srgb(out), px_per_mm, (x0, y0))

@@ -71,10 +71,12 @@ DIY stores and furniture spare-part counters are the fastest sources. **Buy two 
   - top view with a ruler alongside
   - side view
   - the part in its assembly, if any
-- **After D1, once the mat is printed:** re-photograph intact parts on the mat following the capture protocol in PLAN §5.2:
-  - top view, from about 40 cm
+- **After D1, once the mat is printed:** re-photograph intact parts on the mat following the capture protocol in PLAN §5.2 (revised 2026-10-27):
+  - top view, phone roughly parallel and above the part
+  - **2× or 3× lens**, stepping back until the mat fills the frame (less parallax, more pixels on the part)
   - diffuse light, no flash
   - 2–3 shots, moving the part between shots
+  - **keep the original files** (JPEG; on iPhone, Settings → Camera → Formats → Most Compatible). Screenshots and messaging apps drop the EXIF focal length, which the height correction needs
 - **Only then break the sacrificial parts.** Snap one tab or ear with pliers (wear eye protection), on one side of the symmetry axis. **Keep the broken-off fragment**, since it's extra ground truth. Then photograph the broken part on the mat, plus a close-up of the fracture.
 
 ## 4. The physical demonstration (if a 3D printer becomes available)

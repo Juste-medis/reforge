@@ -30,8 +30,8 @@ def _run(args: argparse.Namespace) -> int:
 
     out = args.output or get_settings().reforge_data_dir / "jobs" / job_id
     report = asyncio.run(photo_to_stl(args.photo, out, args.thickness, segmenter, bar_x_mm=args.bar_x,
-                                      bar_y_mm=args.bar_y, job_id=job_id))
-    summary = {k: report[k] for k in ("segmentation", "part", "timings_s")}
+                                      bar_y_mm=args.bar_y, job_id=job_id, focal_35mm=args.focal_35mm))
+    summary = {k: report[k] for k in ("segmentation", "pose", "height_correction", "part", "timings_s")}
     summary["valid"] = report["validation"]["valid"]
     summary["output_dir"] = str(out)
     print(json.dumps(summary, indent=2, default=str))
@@ -49,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--segmenter", choices=["sam", "classical"], default="sam")
     run.add_argument("--prompt", default="plastic part", help="SAM 3.1 noun phrase")
     run.add_argument("--point", default=None, help="SAM point prompt 'x,y' in rectified-view pixels")
+    run.add_argument("--focal-35mm", type=float, default=None,
+                     help="lens focal length, 35 mm equivalent (default: read from the photo's EXIF)")
     run.add_argument("--job", default=None)
     run.add_argument("-o", "--output", type=Path, default=None)
     sub.add_parser("mat", help="write the printable calibration mat", add_help=False)

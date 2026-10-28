@@ -11,9 +11,10 @@ Built for the Meta Global AI Developer Hackathon (Indie track, "Push the Frontie
 
 1. **Calibrate.** You photograph the part on the printed Re-Forge mat (`assets/mat/`). Twelve ArUco markers give a metric homography, with a residual and a leave-one-out error. Two caliper-checked 100 mm bars correct the print scale.
 2. **Segment.** **SAM 3.1** (Meta Model API) segments the part from a box prompt around a local colour proposal, or from your click; a noun phrase is the fallback. A classical fallback, labelled *not AI*, exists for offline use.
-3. **Measure.** A two-colour edge model refines the mask to sub-pixel accuracy against the known mat background. Through-holes are found by colour and measured by circle fit.
-4. **Build.** A typed, validated `PartSpec` is compiled deterministically (manifold3d) into a watertight solid, plus an editable OpenSCAD file. **No model output is ever executed.**
-5. **Validate.** Checks: watertight, single body, genus equal to the hole count, volume and bounding box against the spec, and FDM printability.
+3. **Measure.** A two-colour edge model, in linear light, refines the mask to sub-pixel accuracy against the known mat background. Through-holes are found by colour and measured by circle fit, corrected for the measured edge blur.
+4. **Correct for height.** The part's top face is closer to the camera than the mat, so it looks bigger: +0.6 mm on an 80 mm part 3 mm thick, photographed from 40 cm. The camera pose comes from the mat (focal length from the mat's perspective and/or the photo's EXIF). The footprint is then recovered exactly, holes included, with the uncertainty reported.
+5. **Build.** A typed, validated `PartSpec` is compiled deterministically (manifold3d) into a watertight solid, plus an editable OpenSCAD file. **No model output is ever executed.**
+6. **Validate.** Checks: watertight, single body, genus equal to the hole count, volume and bounding box against the spec, and FDM printability.
 
 **Next:** Muse Spark interpretation and symmetry-based reconstruction of the broken region, and the Confidence Engine (±U per dimension). See `docs/PLAN.md`.
 
@@ -22,6 +23,7 @@ Built for the Meta Global AI Developer Hackathon (Indie track, "Push the Frontie
 | Status | Items |
 |---|---|
 | ✅ Implemented and tested | calibration, refinement, PartSpec, CAD build, validation, `.scad` export, CLI, API, web UI |
+| ✅ Implemented, tested on synthetic photos | camera pose, height (parallax) correction, linear-light edges: a 3 mm thick part comes out within +0.036 mm on length and ±0.007 mm on hole Ø across 1×–3× lenses (`docs/EVALUATION.md`) |
 | ✅ Verified live (synthetic photo) | SAM 3.1 segmentation via the Meta Model API: box-first prompting, about 2–3 s per call |
 | ⏳ Not yet measured | accuracy on real photos against caliper ground truth (`docs/EVALUATION.md` lists only what has been measured) |
 

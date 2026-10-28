@@ -275,3 +275,61 @@ Status labels:
 **Next**
 - The user prints the mat, measures both bars, and photographs the intact hero part. Then AT-3.
 - Meanwhile, D4 offline: the Spark interpretation schema and prompt (Set-of-Mark), and the mirror-symmetry search and completion.
+
+## 2026-10-27 (Tue afternoon and evening): Session 6, real-photo physics
+
+**Why.** An audit before AT-3 found that the synthetic harness, which every accuracy figure so far came from, left out two effects of a real photo:
+- it drew parts flat (no height), so it had no parallax;
+- it blurred sRGB-encoded values instead of light.
+
+Simulated on the hero bracket (80 × 28 × 3 mm), uncorrected:
+- **Parallax:** +0.61 mm on length from 40 cm, +1.09 mm from 25 cm, and a hole 0.67 mm too small with the camera off-axis. Enough to miss the AT-3 targets and to fail a screw fit.
+- **Edge threshold:** 0.4–1.1 px inside the true edge.
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-10-27 entry)
+- ✅ **Realistic harness:** parts are prisms (exact projection of every face) and optics work in linear light. The old optics stay available as `optics="encoded"` for comparison. 11 existing tests failed under realistic optics, which was the bias being exposed; after the fixes below, all pass.
+- ✅ **Linear-light edges:** the edge threshold and rectification work in linear light; Lab is kept for ΔE and glare. Boundary error under realistic optics went from 0.060–0.100 mm back to 0.011–0.015 mm.
+- ✅ **Marker corner bias:** fitted jointly with the homography.
+  - The bias was 0.85–0.89 px under realistic optics, and 0.2 px even in the old harness.
+  - Calibration residual: 0.16–0.19 → 0.008–0.030 mm, so `CAL_HIGH_RESIDUAL` no longer fires on clean images. AT-1 was re-measured, and the 2026-10-26 interpretation corrected in EVALUATION.
+- ✅ **Camera pose** (`capture/pose.py`):
+  - Focal length from the homography (bootstrap σ) and/or EXIF (35 mm equivalent, read before uploads are stripped; nothing else is kept), fused.
+  - Warnings: `POSE_FOCAL_MISMATCH`, `POSE_FOCAL_ASSUMED`.
+  - Camera height and nadir, each with σ.
+- ✅ **Height correction** (`geometry/height.py`):
+  - **Outline:** exact sweep formula. The PLAN v0.4 formula was found inexact for non-convex outlines (0.55 mm at a U-notch).
+  - **Round holes:** two-disc visibility model. **Other holes:** the dual formula.
+  - **Single-view occlusion limit:** derived, tested, and reported as `occlusion_bound_mm`.
+- ✅ **Edge spread** σ measured on each photo (∫t(1 − t) = σ/√π); hole radii corrected for blur curvature (σ²/2R). Hole Ø error: −0.004…−0.110 mm before, ±0.012 mm after (≤ 0.001 without noise).
+- ✅ **Outline smoothing** by 1 px along the edge; the raw trace is kept for roughness (D4).
+- ✅ **Pipeline, CLI, API, UI:**
+  - Report sections `pose` and `height_correction`; the CLI gains `--focal-35mm`.
+  - New UI card: photographed vs footprint extents, parallax removed ± 2σ, camera height, lens source. Verified in headless Chromium; screenshot in `docs/media/ui-height-correction-synthetic.png`.
+- ✅ **Results:** on a 3 mm part, synthetic, 1×/2×/3× lenses, flat-on or tilted, with or without EXIF:
+
+  | | before | after |
+  |---|---|---|
+  | L | up to +0.58 mm | +0.020…+0.036 mm |
+  | W | up to +0.47 mm | −0.002…+0.029 mm |
+  | hole Ø | −0.21…+0.11 mm | −0.007…+0.004 mm |
+  | hole spacing | up to +0.26 mm | ±0.007 mm |
+
+- ✅ **Tests:** 102 offline pass (19 new), ruff clean, frontend type-check and build pass. Live: 2 pass on the new physics (about $0.005).
+- **Dependencies:** `pillow` and `scipy` declared directly (both were already in the lock as transitive dependencies). `backend/tools/real_photo_biases.py` reproduces the simulation tables.
+- **Docs:** EVALUATION (new entry and corrections), PLAN v0.5 (§4 R1, §5.2 capture protocol, §6.3, §9, §10), DEMO_PART_GUIDE (capture), README (status).
+
+**Open limits** (stated in EVALUATION §4)
+- 🟡 The sRGB tone curve and the centred principal point are assumptions; AT-3 measures the effect.
+- 📋 Confidence Engine (D5):
+  - With no EXIF on a flat-on view the focal length is a prior: block, or widen U.
+  - Occluded concave corners → UNCERTAIN.
+  - `u_cal` from the homography's prediction error.
+
+**Capture protocol changed** (PLAN §5.2):
+- 2× or 3× lens, with the mat filling the frame.
+- Phone above the part.
+- Original JPEG files, not screenshots or messaging-app copies.
+
+**Next**
+- AT-3 needs the user: print the mat, measure both bars and the part, and take 3 photos following the new protocol.
+- D4: the Muse Spark interpretation (Set-of-Mark overlay, per-request schema) and mirror-symmetry completion.

@@ -141,3 +141,141 @@ The total pipeline is about 4 s, of which SAM is 2–3 s. Each call writes a led
 - Both modes now give identical measurements.
 
 **Spend:** about **$0.043** estimated for all of today's spike, diagnosis and live tests (17 SAM calls, 2 Spark calls). Whether SAM bills empty results is unknown; they're counted here.
+
+---
+
+## 2026-10-27 · Real-photo physics: part height and linear-light optics · SIMULATION and SYNTHETIC
+
+**Why this entry exists.** An audit of the test harness found two physical effects of a real photo missing from every synthetic number above:
+- **Height:** the renderer drew parts flat on the paper, but a real part's top face is h mm above the mat, closer to the camera.
+- **Optics:** the renderer blended and blurred sRGB-encoded values, but lenses blur and pixels integrate *linear light*, which the camera then encodes.
+
+The earlier entries stay valid for the conditions they state, but they did not predict real-photo accuracy. Both effects are now modelled in the renderer (`tests/synthetic/scene.py`: exact prism projection, linear-light coverage and blur) and corrected in the pipeline.
+
+### 1. Size of the effects (exact simulation, `backend/tools/real_photo_biases.py`)
+
+**Height parallax.** Conditions:
+- The bracket: 80 × 28 mm, 3.0 mm thick, holes Ø 4.2 at x = ±30.
+- Measured through the mat-plane homography. "Nadir offset" is the distance from the part centre to the point under the camera.
+- "Observed" is what the M1 pipeline (git `380c1bc`) would have measured.
+- "Two-copy" is the correction first planned in PLAN v0.4 (O ∩ O/m).
+
+| camera height | nadir offset | observed L × W (mm) | observed hole Ø (mm) | two-copy hole Ø, max deviation (mm) |
+|---|---|---|---|---|
+| 250 mm | 0 | 80.972 × 28.340 | 3.989 / 3.989 | 4.198, 0.030 |
+| 250 mm | 58 mm | 81.093 × 28.534 | **3.527** / 3.940 | 4.154, **0.248** |
+| 400 mm | 0 | 80.605 × 28.212 | 4.070 / 4.070 | 4.199, 0.012 |
+| 400 mm | 58 mm | 80.680 × 28.332 | 3.791 / 4.040 | 4.189, 0.095 |
+| 500 mm | 0 | 80.483 × 28.169 | 4.096 / 4.096 | 4.200, 0.008 |
+| 750 mm | 58 mm | 80.361 × 28.177 | 3.987 / 4.116 | 4.198, 0.027 |
+
+- Both formulas recover the outline extents exactly (80.000 × 28.000) on this convex outline.
+- The two-copy formula is not exact for holes, nor (see §3) for non-convex outlines.
+
+**Edge threshold.** A 1-D step, pixel-integrated, with the t = 0.5 crossing computed as `refine.py` does. Negative values sit inside the part, in px:
+
+| paper / part grey | blur σ | old harness (encoded blur, Lab threshold) | real camera (linear blur, Lab threshold) | linear-light threshold |
+|---|---|---|---|---|
+| 235 / 30 | 0.6 / 1.0 / 1.5 px | −0.064 / −0.102 / −0.150 | −0.480 / −0.754 / −1.112 | −0.002 / +0.001 / −0.001 |
+| 235 / 55 | 0.6 / 1.0 / 1.5 px | −0.050 / −0.080 / −0.119 | −0.381 / −0.600 / −0.886 | −0.000 / +0.001 / +0.003 |
+| 235 / 120 | 0.6 / 1.0 / 1.5 px | −0.030 / −0.047 / −0.069 | −0.200 / −0.319 / −0.469 | +0.001 / −0.002 / −0.001 |
+
+At 7.6 px/mm (a 12 MP 1× phone photo from 40 cm), −0.60 px is −0.079 mm per edge: L −0.16 mm and hole Ø +0.16 mm.
+
+### 2. Fixes, measured on the realistic harness
+
+**Boundary refinement.** Same scene as the D2 entry above (4.5 px/mm, blur σ 0.8 px, noise 2), flat part, four coarse-mask variants:
+
+| configuration | mean boundary error (mm) | max (mm) | hole Ø error (mm) |
+|---|---|---|---|
+| old harness, old code (reproduces the D2 entry) | 0.0105–0.0154 | 0.049 | +0.006…+0.009 |
+| **realistic optics, old code** | **0.0601–0.1001** (inside the part) | 0.132 | **+0.189…+0.193** |
+| realistic optics, linear-light rectification only | 0.0607–0.1007 | 0.134 | +0.190…+0.193 |
+| realistic optics, linear-light threshold only | 0.0111–0.0155 | 0.065 | −0.021 |
+| realistic optics, current code | 0.0107–0.0154 | 0.065 | −0.022 (before the curvature correction below) |
+
+The threshold is the fix. Linear-light rectification is kept because it's physically right, but it changed nothing measurable here.
+
+**Marker corners.**
+- **The bias:** OpenCV's sub-pixel ArUco corners sit inside the true corners along each marker's diagonal. The offset is **0.85–0.89 px** with realistic optics (0.20–0.22 px in the old harness), measured directly against the true projections.
+- **Why it matters:** it's symmetric about each marker, so it barely moves the homography. But it dominated the residual: 0.160–0.187 mm, which raised `CAL_HIGH_RESIDUAL` on every image.
+- **The fix:** the bias is now fitted jointly with the homography as one shared parameter in pixels, which on a real print also absorbs dot gain. The fitted value is 0.845–0.885 px, matching the direct measurement.
+- **AT-1 re-measured** (same cases as the 2026-10-26 table):
+
+| tilt x/y/roll (°) | markers | native px/mm | fit RMS (mm) | leave-one-out RMS (mm) | max scale error (100 mm) | max free-zone point error (mm) |
+|---|---|---|---|---|---|---|
+| 0/0/0 | 12 | 5.51 | 0.008 | 0.010 | 0.009 % | 0.008 |
+| 10/0/5 | 12 | 4.90 | 0.017 | 0.019 | 0.002 % | 0.009 |
+| 0/18/-10 | 12 | 4.52 | 0.023 | 0.025 | 0.002 % | 0.009 |
+| 20/12/30 | 12 | 4.09 | 0.028 | 0.030 | 0.005 % | 0.009 |
+| 25/0/90 | 12 | 5.93 | 0.018 | 0.019 | 0.002 % | 0.004 |
+| 17.7/17.7/0 | 12 | 4.76 | 0.024 | 0.025 | 0.002 % | 0.009 |
+| 12/-8/15, 5 markers occluded | 7 | 4.40 | 0.021 | 0.023 | 0.004 % | 0.010 |
+
+**Camera pose** (`reforge/capture/pose.py`). The focal length comes from the homography's orthonormality constraints, with a bootstrap over markers giving 1σ. Synthetic cameras, true f = 1900 / 3800 / 5700 px:
+- **Tilted views (5–25°):** the homography focal length is within 0.2–1.6 % (estimated 1σ 1.0–3.1 %), and the camera height within 0.1–1.6 %.
+- **Flat-on views:** the homography can't measure the focal length, so the EXIF value (35 mm equivalent, rounded to 1 mm) is used. The camera height is then within 0.2–1.5 %.
+- **No EXIF and flat-on:** a 26 mm prior is used and `POSE_FOCAL_ASSUMED` is raised. With a 3× lens that prior put the camera at 324 mm instead of 1025 mm, so this case must not be trusted (§4).
+
+**Height correction** (`reforge/geometry/height.py`, unit tests on exact silhouettes):
+- **Outline:** the exact inverse is the intersection of the photographed outline scaled by every factor in [1/m, 1]. It's computed as (O ∩ O/m) minus the trapezoids each boundary edge sweeps.
+  - Convex outlines are recovered to < 0.002 mm (Hausdorff) for camera heights 250–750 mm and nadirs up to 144 mm away.
+  - A U-shaped notch lost no material (< 1e-4 mm²). Its only extra material is the single-view occlusion zone of §3.
+- **Round holes:** a two-disc visibility model (bottom opening ∩ projected top opening) recovers Ø and centre to < 0.002 mm. A plain circle fit on the same data reads up to 0.67 mm small.
+- **Non-round holes:** the dual sweep formula recovers a square hole's bounds to 0.002 mm, never enlarges the hole, and misses only its occluded corner (0.28 mm²).
+
+**Blur-curvature bias of holes.** A blurred curve's 0.5 iso-contour sits σ²/(2R) towards its centre of curvature. Prediction for R = 2.1 mm at 5.5 px/mm: Ø −0.010 mm at σ = 0.8 px, −0.040 mm at 1.6 px. Measured: −0.0106 and −0.0409.
+- The edge spread σ is now measured on each photo from ∫ t(1 − t) dn = σ/√π over the traced edges.
+- Measured σ: 0.101–0.457 mm, against 0.105–0.458 mm actual (render blur 0.5–2.5 px, with pixel integration).
+- Corrected hole Ø error: within ±0.001 mm without noise, and ≤ 0.012 mm at blur 2.5 px with noise 5 (raw: −0.004 to −0.110 mm).
+
+**Outline smoothing.** The bounding box of a traced contour picks its noise extremes. The outline is now smoothed by one pixel along its arc length; the raw trace is kept as evidence. A circle of radius R shrinks by σ²/(2R) under smoothing, 0.003 mm at the bracket's 4 mm corners.
+
+### 3. End to end: a 3.0 mm thick part, realistic optics
+
+Conditions:
+- `reforge run` path, classical segmenter (a test backend), blur σ 0.8 px, noise 2, three seeds per case.
+- The EXIF value is passed as a rounded integer, as a phone writes it.
+- Truth: 80 × 28 mm, Ø 4.2 mm, hole spacing 60 mm.
+
+| lens, tilt, EXIF | camera height | code | L (mm) | W (mm) | hole Ø (mm) | hole spacing (mm) |
+|---|---|---|---|---|---|---|
+| 1×, 0/0/0, EXIF | 345 mm | `380c1bc` (before) | 80.574–80.582 | 28.075–28.078 | 4.207–4.211 | 60.253–60.257 |
+| | | **current** | **80.020–80.024** | **27.998–28.003** | **4.196–4.197** | **59.997–60.000** |
+| 1×, 12/0/0, no EXIF | 357 mm | before | 80.574–80.576 | 28.466–28.471 | 3.994–4.000 | 60.256–60.264 |
+| | | **current** | **80.035–80.036** | **28.010–28.013** | **4.200–4.204** | **59.999–60.002** |
+| 2×, 8/-5/10, EXIF | 765 mm | before | 80.194–80.201 | 28.378–28.382 | 4.055–4.059 | 60.128–60.133 |
+| | | **current** | **80.025–80.028** | **28.014–28.029** | **4.193–4.195** | **59.996–60.001** |
+| 3×, 0/0/0, EXIF | 1025 mm | before | 80.096–80.098 | 27.936–27.939 | 4.312–4.314 | 60.099–60.102 |
+| | | **current** | **80.025–80.027** | **28.026–28.028** | **4.197–4.197** | **60.004–60.007** |
+
+**The M1 reference scene,** now rendered at its real 3.02 mm thickness (tilt 6/−4/12, no EXIF):
+- **Photographed vs corrected:** photographed 80.618 × 28.438 mm, corrected to **80.012 × 28.011 mm**.
+- **Holes:** Ø 4.198 / 4.198, centres (−29.994, 0.004) / (30.003, 0.002).
+- **Pose:** homography focal length +0.14 %; camera height 402 ± 4 mm.
+- **Calibration:** fit RMS 0.017 mm, corner bias 0.876 px.
+- **Time:** 1.12 s in total, of which pose and height correction take 0.25 s.
+
+**Live SAM 3.1** (`tests/live`, 2 calls on this synthetic image, standard tier, about $0.005): both modes pass the 80 × 28 ± 0.1 mm and Ø 4.2 ± 0.05 mm assertions.
+
+### 4. Limits, stated but not yet measured on real photos
+
+- **Tone curve:** an sRGB transfer function is assumed. Phone tone curves and local tone mapping differ, and AT-3 will measure the effect.
+- **Principal point:** assumed at the image centre, with 1σ = 1 % of the diagonal.
+  - In these scenes that gives a nadir 1σ of 7–9 mm.
+  - It moves edges facing away from the camera by (m − 1)·δN.
+  - Reported as `u_persp_mm_2sigma`: 0.13 mm in the reference scene, and up to 0.19 mm from 25 cm. It matters only when the two ends of a dimension face opposite ways relative to the camera.
+- **No EXIF on a flat-on view:** the focal length is a prior, so the correction is wrong with a zoom lens. The run is flagged (`POSE_FOCAL_ASSUMED`); 📋 the Confidence Engine must block or widen U.
+- **Single-view occlusion:** a gap shorter than (m − 1)·distance along a ray is hidden by the top face. Near concave corners the footprint keeps that zone as material. U-notch test, 90 mm from the nadir, from 25 cm: a 0.94 × 0.55 mm triangle, as predicted. `occlusion_bound_mm` is reported, and a second viewpoint resolves it.
+- **Harness ground truth:** the 8× supersampled renderer itself moves outer extents by up to ±0.02 mm (measured by varying the supersampling). That covers most of the remaining +0.02–0.036 mm on L.
+- **Not modelled:** shadows, lens distortion, sharpening halos, draft angles, chamfers.
+
+### 5. Corrections to earlier entries
+
+- **AT-1 (2026-10-26):**
+  - The fit and leave-one-out residuals (0.038–0.063 mm) were inflated by the 0.2 px corner bias, not by "corner jitter averaging out" as stated there.
+  - With the bias fitted, the residuals are 0.008–0.030 mm. The scale errors stand.
+  - The conclusion for D5 still holds: `u_cal` should be the homography's prediction error at the part.
+- **D2 and M1 end to end (2026-10-26)** and **AT-2 (2026-10-27):**
+  - Those were measured on flat parts with encoded-domain optics, so the 80.016 × 28.002 mm and Ø 4.208 / 4.211 figures don't describe a real 3 mm part. §3 does, for synthetic data.
+  - Real-photo accuracy is still **unmeasured** (AT-3).

@@ -16,6 +16,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from reforge.capture.photometry import linear_to_srgb, srgb_to_linear
+
 ARUCO_DICTIONARY = cv2.aruco.DICT_4X4_50
 LAYOUT_VERSION = 1
 MARGIN_MM = 8.0  # keeps markers clear of typical printer margins
@@ -205,7 +207,8 @@ def write_mat_pdf(layout: MatLayout, path: Path) -> Path:
     return path
 
 
-def fill_polygon_exact(image: np.ndarray, rings_px: list[np.ndarray], value: int, factor: int = 8) -> None:
+def fill_polygon_exact(image: np.ndarray, rings_px: list[np.ndarray], value: int, factor: int = 8, *,
+                       linear_light: bool = False) -> None:
     """Composite ``value`` into ``image`` with area coverage from ``factor``× supersampling.
 
     ``rings_px[0]`` is the exterior and any further rings are holes, in pixel-centre coordinates.
@@ -215,6 +218,8 @@ def fill_polygon_exact(image: np.ndarray, rings_px: list[np.ndarray], value: int
     The fine grid is filled with OpenCV's non-anti-aliased fill, which includes boundary pixels and so
     inflates every ring by half a fine pixel (measured: +0.0625 px at factor 8). Each ring is shrunk by
     exactly that amount first, which cancels the bias.
+
+    With ``linear_light`` the coverage blends light, as a camera pixel does, instead of sRGB-encoded values.
     """
     from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -237,6 +242,11 @@ def fill_polygon_exact(image: np.ndarray, rings_px: list[np.ndarray], value: int
         if polys:
             cv2.fillPoly(fine, polys, 1 if k == 0 else 0, cv2.LINE_8, shift)
     coverage = fine.reshape(h, factor, w, factor).mean(axis=(1, 3))
+    if linear_light:
+        region = srgb_to_linear(image[y0:y1, x0:x1])
+        light = srgb_to_linear(np.array([value], np.uint8))[0]
+        image[y0:y1, x0:x1] = linear_to_srgb(region * (1 - coverage) + light * coverage)
+        return
     region = image[y0:y1, x0:x1].astype(np.float32)
     image[y0:y1, x0:x1] = np.clip(np.round(region * (1 - coverage) + value * coverage), 0, 255).astype(np.uint8)
 
@@ -249,12 +259,13 @@ def render_layout(
     paper: int = 235,
     ink: int = 25,
     background: int = 70,
+    linear_light: bool = False,
 ) -> np.ndarray:
     """Draw the page and markers through a mm→px homography.
 
-    Markers use exact area coverage, so their geometry is unbiased ground truth. The page edge uses
-    OpenCV's faster anti-aliased fill; no measurement depends on it. Used for synthetic test scenes
-    and previews. Check bars and text are not drawn.
+    Markers use exact area coverage, so their geometry is unbiased ground truth (blended in linear light with
+    ``linear_light``). The page edge uses OpenCV's faster anti-aliased fill; no measurement depends on it. Used for
+    synthetic test scenes and previews. Check bars and text are not drawn.
     """
     width, height = size
     image = np.full((height, width), background, np.uint8)
@@ -278,7 +289,7 @@ def render_layout(
                 if not cells[r, c]:
                     x, y = marker.x_mm + c * cell, marker.y_mm + r * cell
                     rings.append(project(np.array([[x, y], [x + cell, y], [x + cell, y + cell], [x, y + cell]])))
-        fill_polygon_exact(image, rings, ink)
+        fill_polygon_exact(image, rings, ink, linear_light=linear_light)
     return image
 
 

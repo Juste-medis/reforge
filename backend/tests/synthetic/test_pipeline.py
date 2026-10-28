@@ -19,13 +19,13 @@ LAYOUT = mat_layout("A4")
 
 
 def _asymmetric_photo(path: Path) -> Path:
-    """The hero bracket with a notch at the upper-left *as photographed*, to catch mirrored output."""
+    """The 3.02 mm thick hero bracket with a notch at the upper-left *as photographed*, to catch mirrored output."""
     x0, y0, x1, y1 = LAYOUT.free_zone_mm
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     part = hero_bracket(LAYOUT).difference(box(cx - 41, cy - 15, cx - 32, cy - 8))
     camera = make_camera(LAYOUT, 6, -4, 12)
-    cv2.imwrite(str(path), render_view(LAYOUT, camera, parts=(PartShape(part),), blur_sigma=0.8, noise_sigma=2.0,
-                                       seed=7))
+    cv2.imwrite(str(path), render_view(LAYOUT, camera, parts=(PartShape(part, height_mm=3.02),), blur_sigma=0.8,
+                                       noise_sigma=2.0, seed=7))
     return path
 
 

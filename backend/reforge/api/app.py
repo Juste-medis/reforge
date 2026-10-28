@@ -2,7 +2,8 @@
 
 Uploads are untrusted:
 - size and pixel limits are enforced
-- the image is decoded and re-encoded as PNG, which strips EXIF/GPS before any processing or API call
+- the image is decoded and re-encoded as PNG, which strips EXIF/GPS before any processing or API call; the one
+  value read from the metadata first is the lens focal length (35 mm equivalent), which the height correction needs
 - job IDs are validated
 - only whitelisted output files are served
 The API key never reaches a response.
@@ -20,6 +21,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from reforge.capture.pose import focal_35mm_from_exif
 from reforge.config import REPO_ROOT, Settings, get_settings
 from reforge.errors import ReforgeError
 
@@ -85,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         data = await photo.read(MAX_UPLOAD_BYTES + 1)
         image = _decode_upload(data)
+        focal_35mm = focal_35mm_from_exif(data)  # the only metadata kept: the height correction needs it
         job_id = uuid.uuid4().hex[:12]
         job_dir = jobs_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
@@ -97,7 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             seg = ClassicalSegmenter()
         report = await photo_to_stl(input_path, job_dir, thickness_mm, seg, bar_x_mm=bar_x_mm, bar_y_mm=bar_y_mm,
-                                    job_id=job_id)
+                                    job_id=job_id, focal_35mm=focal_35mm)
         return {"job_id": job_id, "report": report,
                 "files": {name: f"/api/jobs/{job_id}/{name}" for name in OUTPUTS}}
 

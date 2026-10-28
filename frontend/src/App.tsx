@@ -1,10 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, getHealth, runJob } from "./api";
 import { StlViewer } from "./StlViewer";
-import type { ApiErrorBody, Check, Health, JobResponse } from "./types";
+import type { ApiErrorBody, Check, Health, JobResponse, Pose } from "./types";
 
 const fmt = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined || Number.isNaN(value) ? "—" : value.toFixed(digits);
+
+const FOCAL_SOURCE: Record<Pose["focal_source"], string> = {
+  "exif+homography": "from the photo's EXIF, confirmed by the mat's perspective",
+  exif: "from the photo's EXIF",
+  homography: "measured from the mat's perspective",
+  prior: "assumed (no EXIF, view too parallel to measure)",
+};
 
 function StatusChip({ status }: { status: string }) {
   return <span className={`chip chip-${status.toLowerCase()}`}>{status}</span>;
@@ -256,6 +263,21 @@ export default function App() {
                   {[...report.calibration.warnings, ...report.refinement.warnings].map((w) => (
                     <p className="note warn" key={w.code}><strong>{w.code}</strong> {w.message}</p>
                   ))}
+                </section>
+
+                <section className="card">
+                  <h3>Height correction</h3>
+                  <dl className="kv">
+                    <dt>Photographed</dt><dd>{report.height_correction.photographed_extent_mm.map((v) => fmt(v, 2)).join(" × ")} mm</dd>
+                    <dt>Footprint</dt><dd>{report.height_correction.footprint_extent_mm.map((v) => fmt(v, 2)).join(" × ")} mm</dd>
+                    <dt>Parallax removed</dt><dd>up to {fmt(report.height_correction.max_shift_mm, 2)} mm (±{fmt(report.height_correction.u_persp_mm_2sigma, 2)} mm, 2σ)</dd>
+                    <dt>Camera</dt><dd>{fmt(report.pose.camera_height_mm, 0)} ± {fmt(report.pose.camera_height_sigma_mm, 0)} mm above the mat</dd>
+                    <dt>Lens</dt><dd>{fmt(report.pose.focal_35mm, 0)} mm equiv., {FOCAL_SOURCE[report.pose.focal_source]}</dd>
+                  </dl>
+                  {report.pose.warnings.map((w) => (
+                    <p className="note warn" key={w.code}><strong>{w.code}</strong> {w.message}</p>
+                  ))}
+                  <p className="caption">The part's top face is {fmt(report.part.overall_mm[2], 2)} mm closer to the camera than the mat, so it looks larger. The footprint is what gets built.</p>
                 </section>
 
                 <section className="card">

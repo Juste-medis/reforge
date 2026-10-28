@@ -1,7 +1,7 @@
-# RE-FORGE AI: Technical Plan v0.3
+# RE-FORGE AI: Technical Plan v0.5
 
 > **Status: APPROVED (2026-10-23).** The Official Rules (published 2026-10-25) don't explicitly allow prior work, so **project code starts at the kickoff: Mon 26 Oct, 17:00 Paris (16:00 UTC)**. See `docs/PROGRESS.md`.
-> v0.1 drafted 2026-10-22 · v0.2 (2026-10-23): approval directives and preparation findings · v0.3 (2026-10-26): Official Rules, credit terms, and M3 re-ranked by the official judging weights · v0.4 (2026-10-26): Participant Guide requirements (§1.1) and two new M3 candidates · sources in §14.
+> v0.1 drafted 2026-10-22 · v0.2 (2026-10-23): approval directives and preparation findings · v0.3 (2026-10-26): Official Rules, credit terms, and M3 re-ranked by the official judging weights · v0.4 (2026-10-26): Participant Guide requirements (§1.1) and two new M3 candidates · v0.5 (2026-10-27): real-photo physics (height correction, linear-light edges) moved forward and implemented; capture protocol revised (§4 R1, §5.2, §6.3, §9, §10) · sources in §14.
 >
 > Labels used throughout:
 > - ✅ verified in official docs (2026-10-22)
@@ -236,7 +236,8 @@ The strict structured-output subset for Muse Spark:
 
 **Error sources:**
 - **Mat print scale:** 0.5–3 % if someone prints with "fit to page".
-- **Part height above the mat:** perspective error is roughly h divided by camera height. A 4 mm part shot from 40 cm is off by about 1 %.
+- **Part height above the mat:** perspective error is roughly h divided by camera height. Simulated (2026-10-27) on the 3 mm hero bracket: L +0.61 mm from 40 cm, +1.09 mm from 25 cm, and a hole 0.67 mm too small when the camera isn't above the part.
+- **Edge localisation under the camera's tone curve:** optics blur linear light and the JPEG stores encoded values, so a half-way threshold on encoded or Lab values puts a dark part's edge 0.4–1.1 px inside the true edge.
 - **Boundary localisation:** shadows, glare, white-on-white contrast, SAM mask granularity.
 - **Optics and paper:** lens distortion near the edges of the frame, and paper curl.
 
@@ -244,8 +245,8 @@ The strict structured-output subset for Muse Spark:
 
 **Mitigations:**
 - The mat carries a 100 mm caliper-checkable bar, which gives a MEASURED scale correction.
-- Sub-pixel band refinement on a controlled background.
-- Height correction from the recovered camera pose (§6.3).
+- Sub-pixel band refinement on a controlled background, thresholded in linear light (✅ synthetic, 2026-10-27).
+- Height correction from the recovered camera pose (§6.3; ✅ synthetic, 2026-10-27).
 - Two or more photos give an empirical spread.
 - The app prompts for caliper values on fit-critical features.
 - Errors are reported, never hidden.
@@ -317,10 +318,11 @@ The strict structured-output subset for Muse Spark:
 
 1. **Print the Re-Forge mat** (A4 or Letter). It has 12 ArUco markers around a plain central zone, a 100 mm check bar and a mat ID.
 2. **Measure the bar once** with the caliper. The app stores the correction.
-3. **TOP photo:**
-   - Lay the part flat in the centre.
-   - Hold the phone roughly parallel, about 40 cm away.
+3. **TOP photo** (revised 2026-10-27, after the height-correction work):
+   - Lay the part flat in the centre, and hold the phone roughly parallel, above the part.
+   - **Use the 2× or 3× lens and step back until the mat fills the frame.** Parallax shrinks 2–3× and resolution on the part goes up.
    - Use diffuse light, no flash.
+   - **Keep the original file.** Upload it as taken, in JPEG ("Most Compatible" on iPhone), not as a screenshot or a messaging-app copy, which drop the EXIF focal length that the height correction uses.
    - One photo is required; 2–3 are recommended, moving the part or the phone between shots.
 4. **SIDE photo** (M3): the part on its edge.
 5. **DETAIL photos** (optional): a close-up of the break, and the part in its assembly. These help Spark understand what the part does.
@@ -432,20 +434,27 @@ If we're behind schedule at G3, M3 is dropped and D8 becomes buffer.
 
 ### 6.3 Metrology details
 
-- **Homography:** fitted from up to 48 marker corners (12 markers). Its RMS residual, in mm, is reported as a quality figure.
+- **Homography:** fitted from up to 48 marker corners (12 markers), jointly with one shared corner bias along the marker diagonals (✅ 2026-10-27). Sub-pixel corners sit about 0.9 px inside the true corners under realistic optics, and print dot gain pushes them out; unmodelled, that bias was the whole 0.16–0.19 mm residual. The remaining RMS residual, in mm, is reported as a quality figure.
 - **Mat scale:** the user measures the 100 mm bar with the caliper, which gives a MEASURED correction factor for each printed mat.
 - **Rectification:** done at the native resolution of the part region, with no upsampling. The rectified pixel grid is then directly in mm.
 - **Band refinement:**
-  - A robust Lab colour model of the mat background.
+  - A robust colour model of the mat background and the part. Lab for the contrast and glare tests; **linear light for the edge position** (✅ 2026-10-27), since that's where optics blur. Rectification also interpolates in linear light.
   - A foreground-probability field inside a ±0.3 mm band around the SAM boundary.
-  - A sub-pixel iso-contour of that field (marching squares).
+  - A sub-pixel iso-contour of that field (marching squares), smoothed by one pixel along its length; the raw trace is kept as evidence and for roughness.
+  - The edge spread σ is measured on each photo (∫ t(1 − t) dn = σ/√π). Hole radii get the blur-curvature correction σ²/(2R).
   - The discrepancy between the SAM and refined boundaries is reported per segment.
 - **Through-holes:** interior regions that match the mat background, plus holes in the mask. A circle fit (algebraic start, then geometric least squares) gives the centre, Ø, roundness and residual.
-- **Height correction** 📋:
-  1. Estimate the focal length from H (assuming square pixels and a centred principal point), or read it from EXIF.
-  2. Recover the camera height Zc and the nadir point.
-  3. For a prism of thickness h, the true outline is approximately **S ∩ scale(S, 1/m) about the nadir**, where m = Zc / (Zc − h).
-  4. Measure the before/after error on real parts.
+- **Height correction** ✅ on synthetic data (2026-10-27); ⏳ real parts (AT-3):
+  1. **Focal length:**
+     - From H's orthonormality constraints, with a bootstrap over markers for its σ (square pixels and a centred principal point are assumed).
+     - From EXIF (35 mm equivalent, the only metadata kept from an upload).
+     - Fused when both exist; a mismatch is flagged. With neither, a 26 mm prior is used, flagged `POSE_FOCAL_ASSUMED`.
+  2. **Camera centre:** recover the height Zc and the nadir point, with first-order σ from the focal length and the principal point.
+  3. **Outline:** for a prism of thickness h, m = Zc / (Zc − h). The photographed outline is the union of the slices scaled by [1, m] about the nadir. The exact footprint is **the intersection of S scaled by every factor in [1/m, 1]**: (S ∩ S/m) minus the trapezoids S's edges sweep.
+     - The v0.4 formula S ∩ S/m alone is exact only when every ray from the nadir crosses the outline once. A U-shaped notch left 0.55 mm spurious corners.
+  4. **Round holes:** fit a two-disc visibility model (the bottom opening, intersected with the top opening as projected). Other holes: the dual sweep formula.
+  5. **Single-view limit:** a gap shorter than (m − 1)·distance along a ray is hidden. Near concave corners the footprint keeps that zone as material; `occlusion_bound_mm` is reported, and two viewpoints (D5) resolve it.
+  6. **Reported values:** `u_persp_mm_2sigma` and the photographed-vs-footprint extents. 📋 Measure before/after on real parts.
 
 ### 6.4 Muse Spark interpretation (grounded and constrained)
 
@@ -731,7 +740,7 @@ Without a printer, that's stated rather than implied.
 | D4 | Thu 29 | Spark PartAnalysis (Set-of-Mark, dynamic enums); roughness; mirror and rotational search; completion with provenance | A broken part yields a completed profile with provenance |
 | D5 | Fri 30 | Confidence engine (budget, statuses, export gate); caliper overrides and scale correction; fitting and proposals; multi-photo fusion | The report shows ±U and a status for every parameter |
 | D6 | Sat 31 | Full guided UI, SSE, live edits, exports, usage panel | **M2** · gate **G3** (pick the M3 features) |
-| D7 | Sun 1 Nov | Real-part evaluation against caliper ground truth; accuracy fixes (height correction, refinement); print test | `EVALUATION.md` with measured numbers |
+| D7 | Sun 1 Nov | Real-part evaluation against caliper ground truth; accuracy fixes; print test. (Height correction and linear-light edges were moved forward and done on Tue 27 Oct, on synthetic data.) | `EVALUATION.md` with measured numbers |
 | D8 | Mon 2 | Two M3 features (§5.3) | Shipped, or cut cleanly |
 | D9 | Tue 3 | Hardening: tests, security review, Docker, deployment, docs, samples. **Feature freeze at 20:00** | Deployed demo; clean test run |
 | D10 | Wed 4 | Video, write-up, final verification. **Submit by 22:00 CET** (5-hour buffer) | Submitted |
@@ -747,6 +756,10 @@ Without a printer, that's stated rather than implied.
 
 ## 10. Milestone 1: first end-to-end vertical slice (target Wed 28 Oct)
 
+> **Status (2026-10-27, evening):**
+> - ✅ Real-photo physics in the harness and the pipeline: parts with real thickness, linear-light optics, camera pose, height correction, marker corner bias, edge-spread measurement. On a 3 mm part (synthetic, 1×–3× lenses, tilted or flat-on): L/W within +0.036 mm, hole Ø within ±0.007 mm, hole spacing within ±0.007 mm (`docs/EVALUATION.md`). Real photos are still unmeasured.
+> - The M1 target for AT-3 (L/W ±0.5 mm, Ø ±0.3 mm) is unchanged. Without the height correction a 1× photo would likely have missed it on Ø (simulated −0.67 mm).
+>
 > **Status (2026-10-26, 18:30 Paris):**
 > - ✅ AT-1, AT-4 and AT-5: pass on synthetic data (AT-5 with the labelled classical backend).
 > - ✅ AT-6 web slice: verified in headless Chromium (upload → calibration card → outline overlay → 3D view → STL download; no page errors). Opening the STL in a slicer is still for the user.

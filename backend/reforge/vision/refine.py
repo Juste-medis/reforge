@@ -4,8 +4,11 @@ The segmenter (SAM 3.1 in production) decides *what* the part is. This module de
 are, to sub-pixel precision, using the known mat background. The coarse mask only bounds the search:
 the boundary can move at most ``band_mm`` from it, so a shadow or reflection can't drag it far.
 
-Edge model: each pixel's Lab colour is projected onto the line from the paper colour to the part colour,
-giving t ≈ 0 on paper and t ≈ 1 on the part. For a symmetric blur, the true edge is where t = 0.5.
+Edge model: each pixel's *linear-light* colour is projected onto the line from the paper colour to the part
+colour. A pixel that integrates a fraction b of plastic and 1 - b of paper then has t = b exactly, and for a
+symmetric blur the true edge is where t = 0.5. Thresholding sRGB-encoded or Lab values instead puts a dark
+part's edge 0.4–1.1 px inside the true edge (simulated 2026-10-27). Lab is kept for the colour distance (ΔE)
+and glare tests, which are perceptual questions.
 Through-holes are paper seen through the part, so they're found from colour, even when the coarse
 mask filled them in.
 """
@@ -20,7 +23,10 @@ from shapely.geometry import Point, Polygon
 from skimage.measure import find_contours
 
 from reforge.capture.calibration import RectifiedView
+from reforge.capture.photometry import srgb_to_linear
 from reforge.errors import ReforgeError
+from reforge.geometry.circle import CircleFit
+from reforge.geometry.contour import smooth_closed
 
 MIN_CONTRAST_DELTA_E = 12.0
 MIN_BACKGROUND_PIXELS = 500
@@ -44,6 +50,7 @@ class HoleCandidate:
     contour: Contour
     mask_agrees: bool  # the coarse mask also excludes this region
     glare_suspect: bool  # brighter than the paper: possibly a highlight, not a hole
+    fit: CircleFit | None = None  # set by the height correction for round holes; otherwise fit ``contour``
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,10 @@ class RefinedProfile:
     coarse_shift_max_mm: float
     refined: bool  # False if contrast was too low and the coarse boundary was kept
     warnings: tuple[ProfileWarning, ...]
+    outer_raw: Contour | None = None  # the traced edge before smoothing: evidence, and the input for roughness
+    # Edge spread measured on the photo (Gaussian-equivalent σ, mm). A blurred curve's 0.5 iso-contour sits σ²/(2R)
+    # towards its centre of curvature, so a hole of radius R traces that much too small.
+    edge_sigma_mm: float | None = None
 
 
 def _disk(radius_px: int) -> np.ndarray:
@@ -113,18 +124,21 @@ def refine_profile(
         raise ReforgeError("PROFILE_NO_BACKGROUND", "Too little visible mat around the part.",
                            "Centre the part in the mat's free zone with space around it.")
 
+    image = image if image.dtype == np.uint8 else np.clip(image, 0, 255).astype(np.uint8)
     lab = cv2.cvtColor(image.astype(np.float32) / 255.0, cv2.COLOR_BGR2Lab)
     paper = np.median(lab[background], axis=0)
     solid = cv2.erode(mask.astype(np.uint8), kernel).astype(bool)  # plastic only, so holes don't bias the colour
-    interior = lab[solid] if solid.any() else lab[mask]
-    part = np.median(interior, axis=0)
-    direction = part - paper
-    contrast = float(np.linalg.norm(direction))
+    plastic = solid if solid.any() else mask
+    part = np.median(lab[plastic], axis=0)
+    contrast = float(np.linalg.norm(part - paper))
     warnings: list[ProfileWarning] = []
 
     refined = contrast >= MIN_CONTRAST_DELTA_E
     if refined:
-        t = ((lab - paper) @ direction) / contrast**2
+        light = srgb_to_linear(image)
+        paper_light = np.median(light[background], axis=0)
+        direction = np.median(light[plastic], axis=0) - paper_light
+        t = ((light - paper_light) @ direction) / float(direction @ direction)
     else:
         warnings.append(ProfileWarning(
             "PROFILE_LOW_CONTRAST",
@@ -151,6 +165,7 @@ def refine_profile(
 
     padded = np.pad(field, 1)
     contours = [c[:, ::-1] - 1.0 for c in find_contours(padded, 0.5)]  # (row, col) → (x, y) px
+    edge_sigma_mm = _edge_sigma_mm(t, contours, s) if refined else None
     contours = [c[:-1] if np.allclose(c[0], c[-1]) else c for c in contours if len(c) >= 4]
     if not contours:
         raise ReforgeError("PROFILE_NO_CONTOUR", "No closed part boundary was found.", "Retake the photo.")
@@ -161,8 +176,11 @@ def refine_profile(
     outer_pts = in_mm[outer_idx]
     if _signed_area(outer_pts) < 0:
         outer_pts = outer_pts[::-1]
-    outer = Contour(outer_pts, areas[outer_idx])
-    outer_poly = outer.polygon.buffer(0)
+    outer_raw = Contour(outer_pts, areas[outer_idx])
+    # One pixel of smoothing along the edge removes tracing jitter, which would otherwise inflate the extents.
+    smooth = smooth_closed(outer_pts, sigma=1.0 / s, spacing=0.5 / s)
+    outer = Contour(smooth, abs(_signed_area(smooth)))
+    outer_poly = outer_raw.polygon.buffer(0)
 
     others = [i for i in range(len(in_mm)) if i != outer_idx and areas[i] >= min_hole_area_mm2]
     big_outside = [i for i in others if not outer_poly.contains(Point(in_mm[i].mean(axis=0)))]
@@ -188,7 +206,7 @@ def refine_profile(
 
     coarse_edge = m8 - cv2.erode(m8, _disk(1))
     distance = cv2.distanceTransform((1 - coarse_edge).astype(np.uint8), cv2.DIST_L2, 5)
-    outer_px = np.clip(np.round(view.mm_to_px(outer.points_mm)).astype(int), 0,
+    outer_px = np.clip(np.round(view.mm_to_px(outer_raw.points_mm)).astype(int), 0,
                        np.array(mask.shape[::-1]) - 1)
     shift_px = distance[outer_px[:, 1], outer_px[:, 0]]
     if refined and float((shift_px >= band_px - 0.5).mean()) > BAND_SATURATION_FRACTION:
@@ -205,4 +223,31 @@ def refine_profile(
         coarse_shift_max_mm=float(shift_px.max()) / s,
         refined=refined,
         warnings=tuple(warnings),
+        outer_raw=outer_raw,
+        edge_sigma_mm=edge_sigma_mm,
     )
+
+
+def _edge_sigma_mm(t: np.ndarray, contours: list[np.ndarray], px_per_mm: float) -> float | None:
+    """Gaussian-equivalent edge spread from ∫ t(1 - t) dn = σ / √π across a blurred step.
+
+    Summed over every pixel near the traced edges and divided by their length, so no edge-normal sampling is needed.
+    t is left unclipped: on a noisy plateau E[t(1 - t)] = -σ_t², negligible, whereas clipping would add a positive
+    bias. The band is widened until it spans ±3σ, so heavy blur isn't truncated.
+    """
+    lines = np.zeros(t.shape, np.uint8)
+    length = 0.0
+    for c in contours:
+        cv2.polylines(lines, [np.round(c).astype(np.int32)], True, 1)
+        length += float(np.linalg.norm(np.diff(np.vstack([c, c[:1]]), axis=0), axis=1).sum())
+    if length <= 0:
+        return None
+    distance = cv2.distanceTransform(1 - lines, cv2.DIST_L2, 5)
+    sigma_px, half_width = 0.0, max(3.0, px_per_mm)  # start at ±1 mm
+    for _ in range(4):
+        vals = t[distance <= half_width]
+        sigma_px = float(np.sqrt(np.pi) * float((vals * (1 - vals)).sum()) / length)
+        if 3 * sigma_px <= half_width:
+            break
+        half_width = 3.5 * sigma_px
+    return sigma_px / px_per_mm

@@ -13,7 +13,30 @@ export interface Calibration {
   px_per_mm: number;
   perspective_ratio: number;
   scale_correction: [number, number];
+  corner_bias_px: number;
   warnings: Issue[];
+}
+
+export interface Pose {
+  focal_source: "exif+homography" | "exif" | "homography" | "prior";
+  focal_px: number;
+  focal_35mm: number;
+  focal_rel_sigma: number;
+  exif_focal_35mm: number | null;
+  camera_height_mm: number;
+  camera_height_sigma_mm: number;
+  nadir_mm: [number, number];
+  nadir_sigma_mm: number;
+  warnings: Issue[];
+}
+
+export interface HeightCorrection {
+  magnification: number;
+  photographed_extent_mm: [number, number];
+  footprint_extent_mm: [number, number];
+  max_shift_mm: number;
+  u_persp_mm_2sigma: number;
+  occlusion_bound_mm: number;
 }
 
 export interface Segmentation {
@@ -31,6 +54,7 @@ export interface Refinement {
   band_mm: number;
   coarse_shift_mean_mm: number;
   coarse_shift_max_mm: number;
+  edge_sigma_mm: number | null;
   warnings: Issue[];
 }
 
@@ -70,6 +94,8 @@ export interface Report {
   calibration: Calibration;
   segmentation: Segmentation;
   refinement: Refinement;
+  pose: Pose;
+  height_correction: HeightCorrection;
   part: Part;
   validation: Validation;
   timings_s: Record<string, number>;
