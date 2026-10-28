@@ -34,6 +34,7 @@ OUTPUTS = {
     "spec.json": "application/json",
     "report.json": "application/json",
     "overlay.png": "image/png",
+    "setofmark.png": "image/png",
 }
 
 
@@ -81,8 +82,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bar_y_mm: Annotated[float | None, Form()] = None,
         segmenter: Annotated[str, Form(pattern="^(sam|classical)$")] = "sam",
         prompt: Annotated[str, Form(max_length=60)] = "plastic part",
+        interpreter: Annotated[str | None, Form(pattern="^(spark|geometric)$")] = None,
     ) -> dict:
         from reforge.pipeline import photo_to_stl
+        from reforge.reasoning.interpret import GeometricInterpreter, SparkInterpreter
         from reforge.vision.segment import ClassicalSegmenter, SamSegmenter
 
         data = await photo.read(MAX_UPLOAD_BYTES + 1)
@@ -93,14 +96,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         job_dir.mkdir(parents=True, exist_ok=False)
         input_path = job_dir / "input.png"
         cv2.imwrite(str(input_path), image)  # re-encoded: no EXIF/GPS survives
-        if segmenter == "sam":
+        use_spark = (interpreter or ("spark" if segmenter == "sam" else "geometric")) == "spark"
+        client = None
+        if segmenter == "sam" or use_spark:
             from reforge.meta_api.client import MetaClient
 
-            seg = SamSegmenter(MetaClient(settings), prompt=prompt.strip() or "plastic part", job_id=job_id)
+            client = MetaClient(settings)
+        if segmenter == "sam":
+            seg = SamSegmenter(client, prompt=prompt.strip() or "plastic part", job_id=job_id)
         else:
             seg = ClassicalSegmenter()
+        reader = SparkInterpreter(client, job_id=job_id) if use_spark else GeometricInterpreter()
         report = await photo_to_stl(input_path, job_dir, thickness_mm, seg, bar_x_mm=bar_x_mm, bar_y_mm=bar_y_mm,
-                                    job_id=job_id, focal_35mm=focal_35mm)
+                                    job_id=job_id, focal_35mm=focal_35mm, interpreter=reader)
         return {"job_id": job_id, "report": report,
                 "files": {name: f"/api/jobs/{job_id}/{name}" for name in OUTPUTS}}
 

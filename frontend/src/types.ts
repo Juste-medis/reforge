@@ -39,6 +39,60 @@ export interface HeightCorrection {
   occlusion_bound_mm: number;
 }
 
+export interface VerificationNote {
+  code: string;
+  message: string;
+  level: "info" | "warning" | "rejected";
+}
+
+export interface PartAnalysis {
+  object_name: string;
+  family: string;
+  family_reason: string;
+  is_broken: boolean;
+  fracture_segment_ids: string[];
+  fracture_reason: string;
+  symmetry: string;
+  mirror_axis_id: string;
+  symmetry_reason: string;
+  holes: { hole_id: string; role: string }[];
+  missing_features: { description: string; near_segment_ids: string[] }[];
+  required_measurements: { kind: string; target_id: string; why: string }[];
+}
+
+export interface Axis {
+  id: string;
+  angle_deg: number;
+  support: number;
+  holes_matched: number;
+  holes_contradicting: number;
+  offset_ambiguity_mm: number | null;
+}
+
+export interface Completion {
+  axis: string;
+  added_area_mm2: number;
+  inferred_u_mm_2sigma: number;
+  extent_mm: [number, number];
+  regions: { area_mm2: number; filled: boolean; reason: string }[];
+  inferred_holes: { from: string; center_mm: [number, number]; diameter_mm: number }[];
+  runs: { status: string; source: string; length_mm: number }[];
+}
+
+export interface Reconstruction {
+  interpretation: {
+    method: string;
+    is_ai: boolean;
+    latency_s: number;
+    cost_usd: number;
+    fallback_reason: Issue | null;
+    analysis: PartAnalysis;
+  };
+  verification: VerificationNote[];
+  axes: Axis[];
+  completion: Completion | null;
+}
+
 export interface Segmentation {
   method: string;
   is_ai: boolean;
@@ -61,6 +115,7 @@ export interface Refinement {
 export interface Hole {
   id: string;
   kind: "circle" | "polygon";
+  status: string;
   diameter_mm?: number;
   center_mm?: [number, number];
   source?: string;
@@ -68,6 +123,7 @@ export interface Hole {
 
 export interface Part {
   overall_mm: [number, number, number];
+  overall_status: string;
   holes: Hole[];
   excluded_candidates: { hole: string; reason: string; status: string }[];
   unresolved: string[];
@@ -96,6 +152,7 @@ export interface Report {
   refinement: Refinement;
   pose: Pose;
   height_correction: HeightCorrection;
+  reconstruction: Reconstruction;
   part: Part;
   validation: Validation;
   timings_s: Record<string, number>;

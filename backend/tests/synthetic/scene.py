@@ -50,6 +50,23 @@ def hero_bracket(layout: MatLayout, *, broken: bool = False, offset_mm: tuple[fl
     return plate
 
 
+def broken_bracket(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, float] = (0.0, 0.0),
+                   break_x_mm: float = 36.0) -> Polygon:
+    """The hero bracket with its right end snapped off along a rough fracture, as plastic breaks: a millimetre-scale
+    meander plus sub-millimetre roughness (random, reproducible by ``seed``). The right hole stays intact."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    rng = np.random.default_rng(seed)
+    y = np.arange(-16.0, 16.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = break_x_mm + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 60, cy + 16), (cx + 60, cy - 16)])
+    return hero_bracket(layout, offset_mm=offset_mm).difference(cut)
+
+
 @dataclass(frozen=True)
 class VirtualCamera:
     K: np.ndarray

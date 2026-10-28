@@ -6,6 +6,16 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
 
+def resample_closed(points: np.ndarray, spacing: float) -> np.ndarray:
+    """A closed polyline resampled at (nearly) uniform arc length; the first point is kept."""
+    p = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+    closed = np.vstack([p, p[:1]])
+    s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(closed, axis=0), axis=1))])
+    n = max(int(np.ceil(s[-1] / spacing)), 16)
+    u = np.arange(n) * (s[-1] / n)
+    return np.column_stack([np.interp(u, s, closed[:, 0]), np.interp(u, s, closed[:, 1])])
+
+
 def smooth_closed(points: np.ndarray, sigma: float, spacing: float) -> np.ndarray:
     """Gaussian smoothing along the arc length of a closed polyline, resampled every ``spacing``.
 

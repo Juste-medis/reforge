@@ -29,6 +29,9 @@ from reforge.geometry.circle import CircleFit
 from reforge.geometry.contour import smooth_closed
 
 MIN_CONTRAST_DELTA_E = 12.0
+MAX_PART_COLOUR_SPREAD_DELTA_E = 15.0  # 75th percentile of the part pixels' ΔE from the part's median colour
+NOT_PAPER_DELTA_E = 20.0
+MIN_PART_SHARE_OF_NOT_PAPER = 0.5
 MIN_BACKGROUND_PIXELS = 500
 GLARE_FRACTION = 0.3
 BAND_SATURATION_FRACTION = 0.05
@@ -73,6 +76,8 @@ class RefinedProfile:
     # Edge spread measured on the photo (Gaussian-equivalent σ, mm). A blurred curve's 0.5 iso-contour sits σ²/(2R)
     # towards its centre of curvature, so a hole of radius R traces that much too small.
     edge_sigma_mm: float | None = None
+    colour_spread_delta_e: float | None = None  # 75th percentile ΔE of the part's pixels from its median colour
+    trace_share: float | None = None  # traced part area / everything in the view that isn't mat paper
 
 
 def _disk(radius_px: int) -> np.ndarray:
@@ -133,6 +138,22 @@ def refine_profile(
     contrast = float(np.linalg.norm(part - paper))
     warnings: list[ProfileWarning] = []
 
+    spread = float(np.percentile(np.linalg.norm(lab[plastic] - part, axis=1), 75))
+    if spread > MAX_PART_COLOUR_SPREAD_DELTA_E:
+        warnings.append(ProfileWarning(
+            "PROFILE_NONUNIFORM_COLOUR",
+            f"The part isn't one uniform colour (spread ΔE {spread:.0f}): the edge model assumes a single-colour part "
+            "on the mat, so edges may be traced wrong. Painted, rusty, printed or multi-material parts aren't "
+            "supported yet."))
+    # Everything in the view that isn't mat paper, ignoring specks: the traced part should account for most of it.
+    not_paper = (np.linalg.norm(lab - paper, axis=2) > NOT_PAPER_DELTA_E).astype(np.uint8)
+    not_paper = cv2.morphologyEx(not_paper, cv2.MORPH_OPEN, _disk(max(1, int(round(0.5 * s)))))
+    share = float(m8.sum()) / max(float(not_paper.sum()), 1.0)
+    if share < MIN_PART_SHARE_OF_NOT_PAPER:
+        warnings.append(ProfileWarning(
+            "PROFILE_PARTIAL",
+            f"The traced part covers only {share:.0%} of what isn't mat paper. Is the part one uniform colour, alone "
+            "on the mat? A multi-coloured or textured object is traced only in pieces."))
     refined = contrast >= MIN_CONTRAST_DELTA_E
     if refined:
         light = srgb_to_linear(image)
@@ -225,6 +246,8 @@ def refine_profile(
         warnings=tuple(warnings),
         outer_raw=outer_raw,
         edge_sigma_mm=edge_sigma_mm,
+        colour_spread_delta_e=spread,
+        trace_share=share,
     )
 
 

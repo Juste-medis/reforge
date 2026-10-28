@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, getHealth, runJob } from "./api";
 import { StlViewer } from "./StlViewer";
-import type { ApiErrorBody, Check, Health, JobResponse, Pose } from "./types";
+import type { ApiErrorBody, Check, Health, JobResponse, Pose, Reconstruction, VerificationNote } from "./types";
 
 const fmt = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined || Number.isNaN(value) ? "—" : value.toFixed(digits);
@@ -12,6 +12,55 @@ const FOCAL_SOURCE: Record<Pose["focal_source"], string> = {
   homography: "measured from the mat's perspective",
   prior: "assumed (no EXIF, view too parallel to measure)",
 };
+
+const NOTE_MARK: Record<VerificationNote["level"], string> = { info: "✓", warning: "!", rejected: "✗" };
+
+function ReconstructionCard({ recon, image }: { recon: Reconstruction; image: string }) {
+  const { interpretation: it, completion: c, verification } = recon;
+  const a = it.analysis;
+  const axis = recon.axes.find((x) => x.id === a.mirror_axis_id);
+  return (
+    <section className="card span-2">
+      <h3>Reconstruction</h3>
+      <div className="recon">
+        <figure>
+          <img className="overlay" src={image} alt="The marked view the interpreter answered in: segments S, axes A, holes H" />
+          <figcaption className="caption">What the interpreter saw: outline segments S#, candidate mirror axes A#, holes H#. It answers only in these ids.</figcaption>
+        </figure>
+        <div>
+          <dl className="kv">
+            <dt>Read by</dt>
+            <dd>{it.method} <span className={`chip ${it.is_ai ? "chip-observed" : "chip-inferred"}`}>{it.is_ai ? "AI" : "not AI"}</span>{it.is_ai ? ` · ${fmt(it.latency_s, 1)} s · $${fmt(it.cost_usd, 4)}` : ""}</dd>
+            {it.fallback_reason && (<><dt>Fallback</dt><dd>{it.fallback_reason.code}: the geometric rule was used instead</dd></>)}
+            <dt>Object</dt><dd>{a.object_name}</dd>
+            <dt>Broken</dt><dd>{a.is_broken ? `yes: fracture ${a.fracture_segment_ids.join(", ") || "not located"}` : "no"}{a.fracture_reason ? ` · ${a.fracture_reason}` : ""}</dd>
+            <dt>Symmetry</dt><dd>{a.symmetry}{axis ? ` about ${axis.id} (support ${fmt(axis.support * 100, 0)} %, ${axis.holes_matched} holes matched)` : ""}{a.symmetry_reason ? ` · ${a.symmetry_reason}` : ""}</dd>
+            {c ? (
+              <><dt>Rebuilt</dt><dd>{fmt(c.added_area_mm2, 1)} mm² mirrored from the intact side · <StatusChip status="INFERRED" /> ±{fmt(c.inferred_u_mm_2sigma, 3)} mm (2σ, from the mirror)</dd>
+                <dt>Rebuilt extent</dt><dd>{c.extent_mm.map((v) => fmt(v, 2)).join(" × ")} mm{c.inferred_holes.length ? ` · ${c.inferred_holes.length} hole(s) inferred` : ""}</dd></>
+            ) : (<><dt>Rebuilt</dt><dd>nothing: the part is built exactly as photographed</dd></>)}
+          </dl>
+          {verification.map((n) => (
+            <p className={`note ${n.level === "info" ? "ok" : "warn"}`} key={n.code + n.message}><strong>{NOTE_MARK[n.level]} {n.code}</strong> {n.message}</p>
+          ))}
+          {c?.regions.filter((r) => !r.filled).map((r, i) => (
+            <p className="note" key={i}><StatusChip status="OBSERVED" /> kept as photographed ({fmt(r.area_mm2, 1)} mm²): {r.reason}</p>
+          ))}
+          {a.required_measurements.length > 0 && (
+            <>
+              <h4>Caliper measurements requested</h4>
+              <ol className="requests">
+                {a.required_measurements.map((m, i) => (
+                  <li key={i}><code>{m.kind}{m.target_id !== "none" ? ` ${m.target_id}` : ""}</code> {m.why}</li>
+                ))}
+              </ol>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function StatusChip({ status }: { status: string }) {
   return <span className={`chip chip-${status.toLowerCase()}`}>{status}</span>;
@@ -225,7 +274,7 @@ export default function App() {
                 <section className="card">
                   <h3>Detected outline</h3>
                   <img className="overlay" src={result.files["overlay.png"]} alt="Rectified photo with the measured outline and holes" />
-                  <p className="caption">Rectified top view. Blue: refined outline. Green: through-holes.</p>
+                  <p className="caption">Rectified top view. Blue: photographed outline; green: through-holes; cyan: height-corrected footprint. When a broken part is rebuilt: magenta is mirrored (INFERRED), red an UNCERTAIN junction, dashed grey the mirror axis.</p>
                 </section>
 
                 <section className="card">
@@ -234,12 +283,12 @@ export default function App() {
                     <thead><tr><th>Feature</th><th>Value</th><th>Status</th></tr></thead>
                     <tbody>
                       <tr><td>Thickness</td><td className="num">{fmt(report.part.overall_mm[2], 2)} mm</td><td><StatusChip status="MEASURED" /></td></tr>
-                      <tr><td>Length × width</td><td className="num">{fmt(report.part.overall_mm[0], 2)} × {fmt(report.part.overall_mm[1], 2)} mm</td><td><StatusChip status="OBSERVED" /></td></tr>
+                      <tr><td>Length × width</td><td className="num">{fmt(report.part.overall_mm[0], 2)} × {fmt(report.part.overall_mm[1], 2)} mm</td><td><StatusChip status={report.part.overall_status} /></td></tr>
                       {report.part.holes.map((h) => (
                         <tr key={h.id}>
                           <td>{h.id} {h.kind === "circle" ? "Ø" : "(traced)"}</td>
                           <td className="num">{h.kind === "circle" ? `${fmt(h.diameter_mm, 3)} mm @ (${fmt(h.center_mm?.[0], 2)}, ${fmt(h.center_mm?.[1], 2)})` : h.source}</td>
-                          <td><StatusChip status="OBSERVED" /></td>
+                          <td><StatusChip status={h.status} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -249,6 +298,8 @@ export default function App() {
                   ))}
                   <p className="caption">Uncertainty intervals (±) arrive with the Confidence Engine (M2).</p>
                 </section>
+
+                <ReconstructionCard recon={report.reconstruction} image={result.files["setofmark.png"]} />
 
                 <section className="card">
                   <h3>Calibration</h3>

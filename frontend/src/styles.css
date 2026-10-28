@@ -140,3 +140,12 @@ td.num, .kv dd { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .workspace { padding: 16px; }
   .downloads { margin-left: 0; }
 }
+
+.recon { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.recon figure { margin: 0; }
+.recon h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 14px 0 6px; }
+.requests { margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--muted); }
+.requests li { margin: 3px 0; }
+.requests code { color: var(--text); margin-right: 6px; }
+@media (max-width: 900px) { .recon { grid-template-columns: 1fr; } }
+.note.ok strong { color: var(--observed); font-family: var(--mono); margin-right: 6px; }
