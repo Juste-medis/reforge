@@ -13,7 +13,8 @@ Per the approval directives, the primary demo is a **flat, mirror-symmetric plas
 | **Flat (2.5D):** one constant thickness, lies flat, ideally 2–8 mm thick | The MVP builds a single-thickness extrusion |
 | **Mirror-symmetric outline when intact** | Symmetry is the evidence we use to rebuild the missing side |
 | **≥ 2 round through-holes**, ideally a symmetric pair | Holes are fit-critical, easy to verify by caliper and screw test, and good for the demo |
-| **Opaque, matte, one colour** that contrasts with white paper (black, dark grey, blue, red, green) | White, transparent and chrome parts break segmentation and edge accuracy |
+| **Opaque, matte, one colour** that contrasts with white paper (black, dark grey, blue, red, green) | White, transparent and chrome parts break segmentation and edge accuracy. Painted, rusty, printed or multi-material surfaces get traced in pieces: the app refuses a trace that covers under 20 % of what's on the mat (`TRACE_PARTIAL`) |
+| **A real photo of the real part on the printed mat** | A picture pasted onto the mat PDF has no real geometry (tested 2026-10-28: a rusty pipe image pasted on the mat was correctly refused). Pipes, knobs and other 3D shapes are refused too (`FAMILY_UNSUPPORTED`) |
 | **Size 30–120 mm** | Fits the mat's free zone with margin, and is big enough for photo metrology |
 | **Non-safety-critical** | No load-bearing, heat, pressure or electrical-insulation role |
 | **The break removes material on one side only** (a snapped ear, tab or arm), leaving the mirror side intact | Otherwise there is no evidence to reconstruct from (risk R3) |

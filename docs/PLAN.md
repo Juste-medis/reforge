@@ -458,6 +458,13 @@ If we're behind schedule at G3, M3 is dropped and D8 becomes buffer.
 
 ### 6.4 Muse Spark interpretation (grounded and constrained)
 
+> **Status (2026-10-28):** ✅ implemented (`reforge/reasoning/`). Tested offline with labelled fixtures, and live on synthetic photos (3 runs). The user's real collage was refused correctly. Details in `docs/EVALUATION.md`.
+> - **What Spark gets:** the whole free zone plus a marked close-up, and measured facts (segment lengths, hole Ø, each axis's support, matched and contradicting holes, the material its mirror would add, the trace's share of the objects on the mat, colour spread).
+> - **What Spark doesn't get:** the geometric irregularity labels. Its fracture picks are an independent judgement that the verification checks.
+> - **Verification rules:** the axis needs ≥ 90 % support and no hole contradiction; a fracture pick must not match its mirror image.
+> - **Refusal gates:** family ≠ `extruded_profile` → `FAMILY_UNSUPPORTED`, no model built. A trace covering under 20 % of the objects on the mat → `TRACE_PARTIAL`, decided by geometry before any model call.
+> - **Fallback:** a model failure falls back to the geometric rule, labelled not AI.
+
 **Inputs:**
 - The top photo, downscaled.
 - A **Set-of-Mark overlay**: the outline split into about 20–40 numbered segments `S0…Sn`, the candidate axes `A0…Ak` drawn with their measured support, and the holes `H0…Hm`.
@@ -484,6 +491,12 @@ If we're behind schedule at G3, M3 is dropped and D8 becomes buffer.
 - *Review:* Spark looks at the final overlay and lists discrepancies. This is advisory only.
 
 ### 6.5 Symmetry and completion (deterministic and measurable)
+
+> **Status (2026-10-28):** ✅ mirror search and completion (`geometry/segments.py`, `symmetry.py`, `completion.py`). 📋 rotational search.
+> - **Fracture evidence:** a primitive-piece decomposition; a fracture is a run of short pieces.
+> - **Support and holes are kept apart:** a mixed score once let an axis 3.4 mm off rebuild the part 6.9 mm long. Holes pin the axis; `offset_ambiguity_mm` reports where nothing does.
+> - **Mirrored holes:** a mirrored hole is added only inside added material.
+> - **Uncertainty:** U for INFERRED geometry = 2·√(RMS² + (angle σ · lever)² + (2 · offset σ)²). 📋 D5: replace the bootstrap angle σ with a segment jackknife, since the bootstrap under-estimated it 4× in one test.
 
 - **Mirror symmetry:**
   - *Candidates:* the principal axes, the perpendicular bisectors of equal-diameter hole pairs, and a coarse 1° sweep.
@@ -738,7 +751,7 @@ Without a printer, that's stated rather than implied.
 | D1 | Mon 26 (evening) | Read the rules; project scaffold (pinned deps); **API spike** on whatever `prep/verify_meta_api.py` hasn't already answered; mat PDF; print the mat; photograph the intact parts | Gate **G1** recorded in PROGRESS.md: refinement depth, Spark grounding strategy, Muse Image viability |
 | D2 | Tue 27 | Calibration, rectification and quality checks; SAM client and decoding; band refinement; holes; synthetic harness | A mm profile from a real photo |
 | D3 | Wed 28 | PartSpec and validation; manifold3d build; mesh checks; `.scad` emitter; CLI; minimal API and an upload→3D→download page | **M1: AT-1…AT-7 (§10)** · gate **G2** (accuracy) |
-| D4 | Thu 29 | Spark PartAnalysis (Set-of-Mark, dynamic enums); roughness; mirror and rotational search; completion with provenance | A broken part yields a completed profile with provenance |
+| D4 | Thu 29 | Spark PartAnalysis (Set-of-Mark, dynamic enums); roughness; mirror and rotational search; completion with provenance | A broken part yields a completed profile with provenance. ✅ Done Wed 28 on synthetic photos, with live Spark; rotational search 📋 |
 | D5 | Fri 30 | Confidence engine (budget, statuses, export gate); caliper overrides and scale correction; fitting and proposals; multi-photo fusion | The report shows ±U and a status for every parameter |
 | D6 | Sat 31 | Full guided UI, SSE, live edits, exports, usage panel | **M2** · gate **G3** (pick the M3 features) |
 | D7 | Sun 1 Nov | Real-part evaluation against caliper ground truth; accuracy fixes; print test. (Height correction and linear-light edges were moved forward and done on Tue 27 Oct, on synthetic data.) | `EVALUATION.md` with measured numbers |
@@ -757,6 +770,13 @@ Without a printer, that's stated rather than implied.
 
 ## 10. Milestone 1: first end-to-end vertical slice (target Wed 28 Oct)
 
+> **Status (2026-10-28, evening):**
+> - ✅ D4: a broken part is rebuilt from one synthetic photo, through SAM 3.1, Muse Spark, verification and mirror completion with provenance.
+>   - Geometric rule, 24 photos: 24/24 rebuilt; L +0.008…+0.040 mm; W −0.003…+0.061 mm; Ø 4.192–4.201.
+>   - Live Spark (3 runs): the fracture read matched the geometry, the right axis was chosen, and one over-pick was rejected by the verification.
+> - ✅ Refusal gates for out-of-scope inputs, prompted by the user's first real test.
+> - ⏳ AT-3 and M2 still need real photos of real parts.
+>
 > **Status (2026-10-27, evening):**
 > - ✅ Real-photo physics in the harness and the pipeline: parts with real thickness, linear-light optics, camera pose, height correction, marker corner bias, edge-spread measurement. On a 3 mm part (synthetic, 1×–3× lenses, tilted or flat-on): L/W within +0.036 mm, hole Ø within ±0.007 mm, hole spacing within ±0.007 mm (`docs/EVALUATION.md`). Real photos are still unmeasured.
 > - The M1 target for AT-3 (L/W ±0.5 mm, Ø ±0.3 mm) is unchanged. Without the height correction a 1× photo would likely have missed it on Ø (simulated −0.67 mm).

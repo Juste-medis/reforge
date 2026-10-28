@@ -279,3 +279,85 @@ Conditions:
 - **D2 and M1 end to end (2026-10-26)** and **AT-2 (2026-10-27):**
   - Those were measured on flat parts with encoded-domain optics, so the 80.016 × 28.002 mm and Ø 4.208 / 4.211 figures don't describe a real 3 mm part. §3 does, for synthetic data.
   - Real-photo accuracy is still **unmeasured** (AT-3).
+
+---
+
+## 2026-10-28 · D4: reading a broken part and rebuilding it by mirror symmetry · SYNTHETIC, plus live Muse Spark
+
+### 1. Geometry on exact outlines (`tests/unit/test_reconstruction_geometry.py`)
+
+The hero bracket (80 × 28 mm, Ø 4.2 holes at ±30 mm) is the ground truth. It is broken with `broken_bracket`: a rough fracture with a millimetre meander plus sub-millimetre roughness, random but reproducible by seed.
+
+- **Segments:**
+  - Intact outline: 4 lines and 4 arcs, with no irregular segment, also with 0.01 mm noise.
+  - Broken, seeds 0/3/7 with 0.01 mm noise: irregular segments only along the break, totalling more than 20 mm.
+  - On the clean outline, moulded edges fit a line or an arc within ≤ 0.012 mm RMS; irregular segments miss by 0.25–0.36 mm.
+- **Mirror axes:**
+  - Intact part: both symmetry axes found, each with support > 0.99, angle within 0.01°, offset within 0.01 mm, both holes matched.
+  - Broken part, fracture excluded:
+    - Lengthwise axis: angle within 0.05°, offset < 0.02 mm, support > 0.99.
+    - Also tested rotated −37° and +61° with noise.
+- **A trap found and closed:**
+  - **Symptom:** on a photo pipeline run, a vertical axis 3.4 mm off the true one kept 93 % of a score that mixed outline and holes, and the bracket was rebuilt **6.9 mm too long**.
+  - **Cause:** the long straight edges can't fix the axis along the part, and the intact end's mirror lands where material is missing (no evidence).
+  - **Fix:** outline support and hole agreement are now kept apart. An axis that more holes contradict than confirm is never used. `offset_ambiguity_mm` reports how far an axis can slide without losing support or a hole.
+  - On a plate without holes, broken across its full width, the slide is > 0.5 mm and is reported as such (`AXIS_OFFSET_AMBIGUOUS`). The rebuilt length is then genuinely undetermined by the photo.
+- **Completion:**
+  - **Fit:** the broken bracket was rebuilt to **Hausdorff 0.004 mm** from the intact truth, area 2226.23 vs 2226.25 mm².
+  - **Provenance:** OBSERVED and INFERRED runs, with UNCERTAIN only at the ≤ 4 junction points.
+  - **Holes:** H0/H1 matched within 0.01 mm.
+  - **Designed asymmetry:** a notch far from the break is reported ("real asymmetry") and kept as photographed, not filled.
+- **A hole lost in the break is inferred** from its mirror image, once a surviving central hole pair pins the axis:
+  - Diameter error ≤ 0.01 mm. Centre error 0.030 mm, against a reported 2σ of 0.043 mm, so U covers the error.
+  - **Honest caveat:** the axis angle error (0.029°) was **4× its bootstrap σ**; U covered the error through its RMS term. 📋 D5 replaces the angle σ with a segment jackknife.
+
+### 2. From a photo: the geometric rule (not AI), 24 photos
+
+Conditions:
+- Rendered photos of a 3.0 mm thick broken bracket, realistic optics (blur σ 0.8 px, noise 2), 12 fracture seeds × 2 camera poses (tilt 6/−4/12 without EXIF; flat-on with EXIF).
+- Classical segmentation. The geometric interpretation rule, a labelled test backend.
+
+| result | value |
+|---|---|
+| rebuilt correctly (mirror axis lengthwise, L and W within 0.1 mm) | **24 / 24** |
+| length error | +0.008 … +0.040 mm |
+| width error | −0.003 … +0.061 mm |
+| hole Ø (truth 4.2) | 4.192 … 4.201 mm |
+| reconstruction stage | 0.58 s median; about 1.4 s per photo end to end on 4 vCPU |
+
+Two rule bugs were found by the campaign and fixed before this table. The table is the final run.
+- **Over-fine tie-break:** supports of 1.00 vs 0.99 decided between the crosswise and lengthwise axes. The rule now ranks usable axes by holes matched, then material rebuilt.
+- **Missed fracture piece:** a short smooth piece sandwiched inside a break wasn't labelled as fracture.
+
+### 3. Live: SAM 3.1 + Muse Spark 1.3 (standard tier, `reasoning_effort` low)
+
+Spark is sent the measured facts and two images. It is **not** told which segments the geometry finds irregular.
+
+**Synthetic broken bracket photo** (tilt 6/−4/12):
+
+| run | Spark's fracture pick | geometry's irregular set | axis | verification | rebuilt | Spark latency, cost |
+|---|---|---|---|---|---|---|
+| exploratory (production ledger) | S0–S3 | S0–S3 | A1 (lengthwise, "adds 106.8 mm²") | passed | 80.03 × 28.028 mm, Ø 4.194/4.196 | 10.1 s, $0.0131 |
+| web UI | S0–S3 **+ S10** | S0–S3 | A1 | **S10 rejected** (matches its mirror 100 %) | 80.03 × 28.03 mm | 7.8 s, $0.0120 |
+| live tests, ×2 | (asserted) | | | passed | L, W within 0.1 mm | |
+
+- Spark named the part a "rectangular (two-hole) mounting plate", called both holes "mounting", and requested sensible caliper measurements (overall length, width, hole spacing and diameters, thickness, fracture extent).
+- Its answer varies between runs. The verification caught the one over-pick, and the reconstruction stayed correct.
+
+**The user's own test, 2026-10-28** (a photo of a rusty pipe pasted onto the mat PDF, 96 dpi):
+- **Before the fix:**
+  - Spark saw only a close-up crop of the traced region, a sliver of the pipe. It answered "narrow plastic clip fragment", `extruded_profile`, and a 5.4 × 29.6 mm STL was built.
+  - The geometry's warnings (`PROFILE_PARTIAL`, `PROFILE_NONUNIFORM_COLOUR`) fired but didn't stop it.
+- **After the fix (Spark now also gets the whole free zone, and the facts include the trace's share of the objects on the mat):**
+  - **Geometric gate, not AI:** `TRACE_PARTIAL`. The trace covers 1 % of what's on the mat, so the job stops with no model and no API call.
+  - **Spark, given the whole view:** "corroded steel pipe section", family `unsupported`: "Rusted 3D pipe, not flat uniform plate. Trace is 1 % of mat objects." So `FAMILY_UNSUPPORTED` refuses as well.
+
+**Spend 2026-10-28:**
+- **Production ledger:** $0.0906, from 10 SAM calls (5 from the user's own app runs) and 4 Spark calls.
+- **Live tests (temporary ledgers):** about $0.04.
+- **Spark per call:** $0.012–0.026, depending on image size; the tall crop-only image cost 9,579 input tokens.
+
+### 4. Not yet measured
+
+- A real photo of a real broken part (AT-3, then M2's "two real broken parts").
+- Spark's agreement rate over many parts. Three readings of one synthetic part are not an accuracy figure.

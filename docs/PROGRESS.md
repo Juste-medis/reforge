@@ -353,3 +353,46 @@ Simulated on the hero bracket (80 × 28 × 3 mm), uncorrected:
 **Next**
 - The user pushes. Then AT-3, once the mat is printed and photographed following PLAN §5.2.
 - D4: the Muse Spark interpretation (Set-of-Mark overlay, per-request schema) and mirror-symmetry completion.
+
+## 2026-10-28 (Wed, evening): Session 8, D4: reading and rebuilding a broken part
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-10-28 D4 entry)
+- ✅ **Fracture evidence** (`geometry/segments.py`): the outline is decomposed into line and arc pieces; a break is a run of short pieces. Segments S0…Sn feed the Set-of-Mark image.
+- ✅ **Mirror axes** (`geometry/symmetry.py`):
+  - Candidates from hole pairs, principal axes and a 2° sweep; ICP refinement; block-bootstrap σ; slide ambiguity.
+  - Outline support and hole agreement are kept apart, after a mixed score let a 3.4 mm-off axis rebuild the part 6.9 mm too long.
+- ✅ **Completion** (`geometry/completion.py`):
+  - Only material next to an accepted fracture is filled. Designed asymmetry is reported, not filled. Mirrored holes are added only inside the added material.
+  - Provenance runs: OBSERVED, INFERRED (mirror of S… about A…), UNCERTAIN junctions. The INFERRED uncertainty is stated.
+- ✅ **Muse Spark interpretation** (`reasoning/`):
+  - Set-of-Mark images (the whole free zone plus a marked close-up) and a per-request strict schema whose enums hold only the ids present.
+  - Validation, then geometric verification (axis support and holes; a fracture pick must not match its mirror).
+  - Fallback to the geometric rule, labelled not AI.
+  - Spark is not told the geometric irregularity labels, so its reading is an independent check.
+- ✅ **Refusal gates**, prompted by the user's first real test (a rusty pipe image pasted onto the mat):
+  - `TRACE_PARTIAL` (geometry, before any API call) and `FAMILY_UNSUPPORTED` (from Spark's reading). Both refused that input.
+  - New warnings: `PROFILE_PARTIAL` and `PROFILE_NONUNIFORM_COLOUR`.
+- ✅ **Pipeline, CLI, API, UI:**
+  - Spec outline runs with provenance, and INFERRED holes.
+  - Report section `reconstruction`; `setofmark.png` output; CLI `--interpreter` and `--reasoning-effort`; the API's `interpreter` field.
+  - New UI card "Reconstruction": what Spark saw, its reading, the verification notes, the requested measurements.
+  - Provenance-coloured overlay at 1,400 px.
+  - The length/width and hole statuses now follow the provenance. Verified in headless Chromium on the live path.
+- ✅ **Results:**
+  - **Geometry on exact outlines:** the broken bracket rebuilt to Hausdorff 0.004 mm.
+  - **Geometric rule, 24 synthetic photos:** 24/24 rebuilt; L +0.008…+0.040 mm, W −0.003…+0.061 mm.
+  - **Live Spark, 3 runs:** the fracture read matched the geometry and the right axis was chosen; one over-pick (S10) was rejected by the verification.
+- ✅ **Tests:** 134 offline pass (32 new); 3 live tests pass on the new code (SAM ×2, SAM + Spark). Ruff clean; the frontend type-checks and builds.
+- **Spend 2026-10-28:** about $0.13 (ledger $0.091, including 5 SAM calls from the user's own runs, plus about $0.04 of live tests).
+
+**Open**
+- 🟡 Spark's readings vary between runs. Three readings of one synthetic part are not an accuracy figure.
+- 📋 D5:
+  - Segment jackknife for the axis angle σ, since the bootstrap under-estimated it 4× once.
+  - The Confidence Engine and export gate: UNCERTAIN junctions, prior focal lengths, axis slide ambiguity.
+- 📋 Rotational symmetry (gears) remains secondary.
+- ⏳ AT-3: needs a real photo of a real flat, single-colour plastic part on the printed mat. The user's test images were a web picture and a collage.
+
+**Next**
+- D5: the Confidence Engine (±U for every dimension, coverage check, export gate) and caliper overrides.
+- The user: photos of a real part, following PLAN §5.2.
