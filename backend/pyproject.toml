@@ -2,6 +2,7 @@
 name = "reforge"
 version = "0.1.0"
 description = "RE-FORGE AI: calibrated photo metrology and evidence-labelled reconstruction of broken plastic parts"
+license = "Apache-2.0"
 requires-python = "==3.12.*"
 dependencies = [
     "fastapi>=0.161,<1",

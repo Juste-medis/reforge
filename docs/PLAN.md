@@ -81,7 +81,7 @@ A tighter version is feasible in the window, and it's more convincing to judges:
 **Other rules that affect us:**
 - **Prior work:** not addressed explicitly. Submissions must be the participant's *"original work product"* and *"solely owned"* by them. Under directive 6, coding starts at the kickoff.
 - **Assistance:** *"Participants may contract with a third party for technical assistance, provided the Submission components remain the Participant's own work and the Participant owns all rights to them."* Our reading: AI-assisted development is compatible, because the user owns the output. We'll disclose the assistance in the submission. This is a reading, not legal advice.
-- **Open source:** allowed *"provided applicable open source licenses are followed and the Submission enhances or builds upon the underlying open source product"*. 📋 Ship a `THIRD_PARTY_NOTICES` file.
+- **Open source:** allowed *"provided applicable open source licenses are followed and the Submission enhances or builds upon the underlying open source product"*. ✅ `THIRD_PARTY_NOTICES.md` ships, generated from the installed packages' metadata (2026-10-28).
 - **Licence to organisers:** entrants keep ownership but grant the Organizers a perpetual, royalty-free, non-exclusive licence to use the Submission, and nothing shared is treated as confidential. So **no employer (DriveOnly) code, data or proprietary material goes in**, and the project is built on the user's own time and resources.
 - **Tracks:** Indie track allows teams of up to 4. One track per participant and per project.
 - **Prizes:**
@@ -645,6 +645,7 @@ reforge/
 ├─ frontend/  package.json · src/{steps,viewer,overlays,api}
 ├─ docker/  Dockerfile · compose.yaml · Caddyfile
 ├─ samples/  real photo sets for the "try a sample" demo (+ caliper ground-truth CSV)
+├─ LICENSE · NOTICE · THIRD_PARTY_NOTICES.md
 └─ .env.example
 ```
 
@@ -795,7 +796,7 @@ Without a printer, that's stated rather than implied.
 ## 11. Before kickoff: checklist for you
 
 1. ✅ **Official rules:** published 25 Oct and summarised in §1.1. Accept them when prompted.
-2. ⏳ **Acceptance** (notifications go out by Mon 26, 14:00 CET). Then **claim the $150 credits straight away**:
+2. ✅ **Acceptance and credits:** the $150 credits were claimed (reported by the user, 2026-10-28). Still to do from the guide: set the **Spend Limit notification at $150** on the Billing page. For reference, the claim steps were:
    - Use the form in the "know before you go" email.
    - You'll need your Model API Team ID.
    - Your account must have a payment method on file.
@@ -817,7 +818,7 @@ Without a printer, that's stated rather than implied.
    - The Python stack is smoke-tested.
    - Docker images are verified and get pulled when first needed.
    - Details in `docs/ENVIRONMENT.md`.
-8. **A GitHub account (required):** the guide says repositories **must be public**.
+8. ✅ **GitHub:** the public repository `Juste-medis/reforge`, first pushed 2026-10-27. Pushes are made by the user.
 9. ⏳ **API key:** copy `.env.example` to `.env` and set `META_MODEL_API_KEY`. Then run `~/.local/bin/uv run prep/verify_meta_api.py` (about $0.01).
 10. **Optional:** request the Baseten ($100) and Modal ($100) partner credits now; the forms are in the guide. Applying commits you to nothing, and it keeps M3 (i) possible.
 
@@ -830,8 +831,8 @@ Without a printer, that's stated rather than implied.
 3. ⏳ **Availability:** realistic hours per day, 26 Oct to 4 Nov. This sets the M3 scope.
 4. ✅ **Model tier:** standard by default; contributor only for synthetic or our own non-sensitive images (terms confirmed, §1.2).
 5. ✅ **Pre-kickoff code:** none. The Official Rules don't explicitly allow prior work, so coding starts at the kickoff (directive 6).
-6. ⏳ **Git commits:** may I make small local commits as I build (no pushing)? They'd also document that the code was written after the kickoff.
-7. ⏳ **Licence for the public repo:** I recommend Apache-2.0, which matches OpenCV and manifold3d. MIT is the simpler alternative.
+6. ✅ **Git commits:** approved 2026-10-28. Commits are made locally as the work lands, and the user pushes them.
+7. ✅ **Licence:** Apache-2.0 (2026-10-28): `LICENSE` (verbatim from apache.org), `NOTICE`, `THIRD_PARTY_NOTICES.md`.
 
 ---
 

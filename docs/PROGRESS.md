@@ -333,3 +333,23 @@ Simulated on the hero bracket (80 × 28 × 3 mm), uncorrected:
 **Next**
 - AT-3 needs the user: print the mat, measure both bars and the part, and take 3 photos following the new protocol.
 - D4: the Muse Spark interpretation (Set-of-Mark overlay, per-request schema) and mirror-symmetry completion.
+
+## 2026-10-28 (Wed): Session 7, licence and repository housekeeping
+
+**Done**
+- ✅ **Licence: Apache-2.0.**
+  - `LICENSE` is the verbatim text from apache.org (SHA-256 `cfc7749b…3d30`, 11,358 bytes).
+  - `NOTICE` added, and `license = "Apache-2.0"` set in `backend/pyproject.toml` and `frontend/package.json`.
+- ✅ **`THIRD_PARTY_NOTICES.md`**, generated from installed package metadata by `backend/tools/third_party_notices.py`.
+  - `meta-sam-parser` is under Meta's SAM License. We don't redistribute it, and the use of SAM is acknowledged as that licence asks.
+  - `fpdf2` is LGPL-3.0, used unmodified as a dependency.
+- ✅ **Credits:** the $150 were claimed by the user. Remaining: the $150 Spend Limit notification on the Billing page.
+- ✅ **Commits approved.** The physics work (Session 6) is committed.
+- ✅ **Repository housekeeping:**
+  - Local tool configuration is no longer tracked, and the wording in the docs is tool-neutral.
+  - The initial commit was rewritten with git-filter-repo to match. Its author and commit dates are unchanged, and a full backup of the previous history is kept outside the repository.
+  - The user publishes the rewritten history.
+
+**Next**
+- The user pushes. Then AT-3, once the mat is printed and photographed following PLAN §5.2.
+- D4: the Muse Spark interpretation (Set-of-Mark overlay, per-request schema) and mirror-symmetry completion.

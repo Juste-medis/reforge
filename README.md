@@ -48,3 +48,7 @@ Tests: `cd backend && uv run pytest`. Live API tests are opt-in with `-m live`.
 - `docs/EVALUATION.md`: measured results only
 - `docs/DEMO_PART_GUIDE.md`: choosing and measuring the demo part
 - `docs/ENVIRONMENT.md`: toolchain and setup
+
+## Licence
+
+Apache License 2.0: see `LICENSE` and `NOTICE`. Third-party packages keep their own licences, listed in `THIRD_PARTY_NOTICES.md` (generated from their metadata by `backend/tools/third_party_notices.py`). SAM 3.1 and Muse Spark are used through the Meta Model API under Meta's terms; no model weights are included.
