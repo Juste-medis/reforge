@@ -66,6 +66,7 @@ export interface Axis {
   support: number;
   holes_matched: number;
   holes_contradicting: number;
+  outline_confirming_mm: number;
   offset_ambiguity_mm: number | null;
 }
 
@@ -73,6 +74,8 @@ export interface Completion {
   axis: string;
   added_area_mm2: number;
   inferred_u_mm_2sigma: number;
+  inferred_outline_mm: number;
+  confirmed_mm: number;
   extent_mm: [number, number];
   regions: { area_mm2: number; filled: boolean; reason: string }[];
   inferred_holes: { from: string; center_mm: [number, number]; diameter_mm: number }[];

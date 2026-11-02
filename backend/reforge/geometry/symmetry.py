@@ -26,6 +26,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 import shapely
+from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
@@ -53,11 +54,14 @@ class MirrorAxis:
     sources: tuple[str, ...]
     hole_matches: int = 0  # holes whose mirror lands on a hole of the same diameter
     hole_mismatches: int = 0
+    matched_mm: float = 0.0  # length of outline whose mirror image lands on the outline: the evidence for the axis
     offset_ambiguity_mm: float | None = None  # how far the axis slides with support within 1 % and no hole lost
 
     @property
     def contradicted_by_holes(self) -> bool:
-        return self.hole_mismatches > self.hole_matches
+        """At least as many holes contradict the axis as confirm it. A tie counts against: any axis through one hole
+        has that hole as its own partner, so an axis through one of a bracket's two holes ties 1–1."""
+        return self.hole_mismatches > 0 and self.hole_mismatches >= self.hole_matches
     angle_sigma_deg: float | None = None  # 1σ, block bootstrap
     offset_sigma_mm: float | None = None  # 1σ, perpendicular, at the centroid
 
@@ -114,7 +118,8 @@ def _prepare(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float, float],
 
 
 def _hole_pairs(axis: MirrorAxis, o: _Outline) -> tuple[list[tuple[np.ndarray, np.ndarray]], int]:
-    """Matched (centre, partner centre) pairs, and how many holes contradict the axis."""
+    """Matched (centre, partner centre) pairs, and how many holes contradict the axis. A hole on the axis is its own
+    partner: it pins the axis's position (two of them pin the axis)."""
     pairs, mismatches = [], 0
     for _, centre, radius in o.holes:
         image = axis.reflect(centre)[0]
@@ -137,7 +142,7 @@ def _score(axis: MirrorAxis, o: _Outline) -> MirrorAxis:
     support = float(good / max(good + bad, 1))
     rms = float(np.sqrt(np.mean(dist[match] ** 2))) if match.any() else float("inf")
     return replace(axis, support=support, inlier_rms_mm=rms, hole_matches=len(hole_pairs),
-                   hole_mismatches=hole_mismatches)
+                   hole_mismatches=hole_mismatches, matched_mm=good * SAMPLE_MM)
 
 
 def _pairs(axis: MirrorAxis, o: _Outline) -> tuple[np.ndarray, np.ndarray]:
@@ -161,6 +166,31 @@ def _tls_axis(p: np.ndarray, q: np.ndarray, centroid: np.ndarray, sources: tuple
     return _axis(centre, direction, centroid, sources)
 
 
+def _polish(axis: MirrorAxis, o: _Outline) -> MirrorAxis:
+    """Final fit of angle and offset minimising the distance from each matched point's mirror image to the outline,
+    plus the matched holes' centre errors. The midpoint fit of ``_refine`` can't turn an axis whose evidence is
+    straight edges (any pair along a line has its midpoint on the current axis); this uses their lever arm."""
+    p, _ = _pairs(axis, o)
+    anchors = [(np.asarray(c), np.asarray(partner)) for c, partner in _hole_pairs(axis, o)[0]]
+    if len(p) < 8:
+        return axis
+    point0, angle0 = np.asarray(axis.point), axis.angle_deg
+
+    def moved(x: np.ndarray) -> MirrorAxis:
+        return replace(axis, angle_deg=float((angle0 + x[0]) % 180.0), point=tuple(point0 + x[1] * axis.normal))
+
+    def residuals(x: np.ndarray) -> np.ndarray:
+        a = moved(x)
+        res = [np.minimum(o.tree.query(a.reflect(p))[0], TAU_MM)]
+        res += [np.sqrt(HOLE_WEIGHT) * (a.reflect(c)[0] - q) for c, q in anchors]
+        return np.concatenate([np.ravel(r) for r in res])
+
+    fit = least_squares(residuals, np.zeros(2), diff_step=[1e-4, 1e-4], x_scale=[0.1, 0.1])
+    polished = _score(moved(fit.x), o)
+    better = polished.support >= axis.support - 1e-9 and polished.inlier_rms_mm <= axis.inlier_rms_mm
+    return polished if better and abs(fit.x[0]) < 2.0 and abs(fit.x[1]) < 1.0 else axis
+
+
 def _refine(axis: MirrorAxis, o: _Outline) -> MirrorAxis:
     current = _score(axis, o)
     for _ in range(ICP_ITERATIONS):
@@ -175,7 +205,7 @@ def _refine(axis: MirrorAxis, o: _Outline) -> MirrorAxis:
         current = nxt
         if moved < 1e-7:
             break
-    return current
+    return _polish(current, o)
 
 
 def _bootstrap(axis: MirrorAxis, o: _Outline, rng: np.random.Generator) -> MirrorAxis:
@@ -236,8 +266,13 @@ def find_mirror_axes(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float,
                 candidates.append(_axis((ca_ + cb_) / 2, np.array([-chord[1], chord[0]]), o.centroid,
                                         (f"hole pair {id_a}/{id_b}",)))
     centred = o.samples - o.centroid
-    for direction in np.linalg.svd(centred, full_matrices=False)[2]:
+    principal = np.linalg.svd(centred, full_matrices=False)[2]
+    for direction in principal:
         candidates.append(_axis(o.centroid, direction, o.centroid, ("principal axis",)))
+    # A hole can sit on the axis (a flange's centre bore) while its partners were lost in the break.
+    for hid, centre, _ in o.holes:
+        for direction in principal:
+            candidates.append(_axis(centre, direction, o.centroid, (f"through {hid}",)))
     candidates += _sweep(o)
 
     scored = sorted((_score(c, o) for c in candidates), key=_rank)
@@ -276,7 +311,8 @@ def _ambiguity(axis: MirrorAxis, o: _Outline) -> float:
 
 
 def _rank(axis: MirrorAxis) -> tuple:
-    return (axis.contradicted_by_holes, -axis.support, axis.inlier_rms_mm)
+    # With a long fracture many axes reach 100 % support on what is left; then the one confirmed by more outline.
+    return (axis.contradicted_by_holes, -round(axis.support, 2), -axis.matched_mm, axis.inlier_rms_mm)
 
 
 def _same(a: MirrorAxis, b: MirrorAxis) -> bool:

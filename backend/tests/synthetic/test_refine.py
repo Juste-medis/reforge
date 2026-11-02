@@ -124,6 +124,22 @@ def test_glare_highlight_is_flagged_not_trusted() -> None:
     assert not glare[0].mask_agrees  # the segmenter saw plastic there
 
 
+def test_light_streak_that_is_not_paper_is_doubted_not_a_hole() -> None:
+    """A reflection on a glossy or metal part can be as light as paper along the paper→part colour line, so it
+    seeds a hole; its inside isn't paper-coloured and it isn't round, so it's doubted. The real holes are kept."""
+    truth = hero_bracket(LAYOUT)
+    x0, y0, x1, y1 = LAYOUT.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    streak = tuple((cx - 14 + 0.5 * k, cy + 4, 1.0, 180) for k in range(13))  # a 2 × 8 mm capsule, grey 180
+    view = _view(truth, spots=streak)
+    profile = refine_profile(view, _rasterize(view, truth))
+    doubted = [h for h in profile.holes if h.doubt]
+    kept = [h for h in profile.holes if not h.doubt]
+    assert len(doubted) == 1 and not doubted[0].glare_suspect
+    assert doubted[0].paper_delta_e > 5.0 and doubted[0].compactness < 0.75
+    assert len(kept) == 2 and all(h.paper_delta_e < 3.0 for h in kept)
+
+
 def test_low_contrast_keeps_coarse_boundary_and_warns() -> None:
     truth = hero_bracket(LAYOUT)
     view = _view(truth, value=226)

@@ -37,7 +37,8 @@ function ReconstructionCard({ recon, image }: { recon: Reconstruction; image: st
             <dt>Symmetry</dt><dd>{a.symmetry}{axis ? ` about ${axis.id} (support ${fmt(axis.support * 100, 0)} %, ${axis.holes_matched} holes matched)` : ""}{a.symmetry_reason ? ` · ${a.symmetry_reason}` : ""}</dd>
             {c ? (
               <><dt>Rebuilt</dt><dd>{fmt(c.added_area_mm2, 1)} mm² mirrored from the intact side · <StatusChip status="INFERRED" /> ±{fmt(c.inferred_u_mm_2sigma, 3)} mm (2σ, from the mirror)</dd>
-                <dt>Rebuilt extent</dt><dd>{c.extent_mm.map((v) => fmt(v, 2)).join(" × ")} mm{c.inferred_holes.length ? ` · ${c.inferred_holes.length} hole(s) inferred` : ""}</dd></>
+                <dt>Rebuilt extent</dt><dd>{c.extent_mm.map((v) => fmt(v, 2)).join(" × ")} mm{c.inferred_holes.length ? ` · ${c.inferred_holes.length} hole(s) inferred` : ""}</dd>
+                <dt>Evidence</dt><dd>{fmt(c.confirmed_mm, 0)} mm of outline and holes confirm the mirror, for {fmt(c.inferred_outline_mm, 0)} mm of outline it invents</dd></>
             ) : (<><dt>Rebuilt</dt><dd>nothing: the part is built exactly as photographed</dd></>)}
           </dl>
           {verification.map((n) => (

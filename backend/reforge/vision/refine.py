@@ -10,7 +10,10 @@ symmetric blur the true edge is where t = 0.5. Thresholding sRGB-encoded or Lab 
 part's edge 0.4–1.1 px inside the true edge (simulated 2026-10-27). Lab is kept for the colour distance (ΔE)
 and glare tests, which are perceptual questions.
 Through-holes are paper seen through the part, so they're found from colour, even when the coarse
-mask filled them in.
+mask filled them in. A candidate whose inside doesn't look like the mat paper around it and isn't round is doubted
+rather than kept: a reflection on polished metal is as light as paper along the paper→part colour line, but it
+isn't paper (synthetic composites, 2026-11-02: real holes ΔE p90 ≤ 3.1 and compactness ≥ 0.78; reflections and
+engravings ΔE p90 ≥ 5.6 and mostly below 0.5).
 """
 
 from __future__ import annotations
@@ -34,6 +37,9 @@ NOT_PAPER_DELTA_E = 20.0
 MIN_PART_SHARE_OF_NOT_PAPER = 0.5
 MIN_BACKGROUND_PIXELS = 500
 GLARE_FRACTION = 0.3
+HOLE_MAX_PAPER_DELTA_E = 5.0  # 90th percentile over the hole's core, lightness half-weighted (walls shade a hole)
+HOLE_MIN_COMPACTNESS = 0.75  # 4πA/P²: 1 for a circle; a round hole that looks off-colour is still kept
+HOLE_PAPER_RADIUS_MM = 15.0  # paper around the hole is the colour reference, so a lighting gradient doesn't count
 BAND_SATURATION_FRACTION = 0.05
 
 
@@ -54,6 +60,18 @@ class HoleCandidate:
     mask_agrees: bool  # the coarse mask also excludes this region
     glare_suspect: bool  # brighter than the paper: possibly a highlight, not a hole
     fit: CircleFit | None = None  # set by the height correction for round holes; otherwise fit ``contour``
+    paper_delta_e: float = 0.0  # 90th percentile ΔE of the hole's core from the paper around it
+    compactness: float = 1.0
+
+    @property
+    def doubt(self) -> str | None:
+        """Why this candidate may not be a through-hole, or None."""
+        if self.glare_suspect:
+            return "brighter than the mat paper: possibly glare, not a hole; confirm to include"
+        if self.paper_delta_e > HOLE_MAX_PAPER_DELTA_E and self.compactness < HOLE_MIN_COMPACTNESS:
+            return (f"doesn't look like the mat paper seen through the part (ΔE {self.paper_delta_e:.0f}) and isn't "
+                    "round: possibly a reflection or a mark, not a hole; confirm to include")
+        return None
 
 
 @dataclass(frozen=True)
@@ -210,6 +228,7 @@ def refine_profile(
             "PROFILE_MULTIPLE_REGIONS", f"{len(big_outside)} other region(s) ignored; only the largest part is used."))
 
     paper_l_sigma = 1.4826 * float(np.median(np.abs(lab[background][:, 0] - paper[0]))) + 1.0
+    yy, xx = np.nonzero(background)
     holes: list[HoleCandidate] = []
     for i in (i for i in others if i not in big_outside):
         pts = in_mm[i]
@@ -223,7 +242,16 @@ def refine_profile(
         bright = image.max(axis=2)[inside]
         glare = float(((lab[inside][:, 0] > paper[0] + 3 * paper_l_sigma) | (bright >= 250)).mean()) > GLARE_FRACTION
         agrees = float((~mask[inside]).mean()) > 0.5
-        holes.append(HoleCandidate(f"H{len(holes)}", Contour(pts, areas[i]), agrees, glare))
+        core = cv2.erode(region, kernel).astype(bool)
+        core = core if core.sum() >= 9 else inside
+        cx, cy = view.mm_to_px(pts.mean(axis=0, keepdims=True))[0]
+        near = (xx - cx) ** 2 + (yy - cy) ** 2 <= (HOLE_PAPER_RADIUS_MM * s) ** 2
+        local = np.median(lab[yy[near], xx[near]], axis=0) if near.sum() >= MIN_BACKGROUND_PIXELS else paper
+        diff = (lab[core] - local) * np.array([0.5, 1.0, 1.0], np.float32)
+        paper_de = float(np.percentile(np.linalg.norm(diff, axis=1), 90))
+        polygon = Polygon(pts)
+        compact = float(4 * np.pi * polygon.area / polygon.length**2) if polygon.length > 0 else 0.0
+        holes.append(HoleCandidate(f"H{len(holes)}", Contour(pts, areas[i]), agrees, glare, None, paper_de, compact))
 
     coarse_edge = m8 - cv2.erode(m8, _disk(1))
     distance = cv2.distanceTransform((1 - coarse_edge).astype(np.uint8), cv2.DIST_L2, 5)

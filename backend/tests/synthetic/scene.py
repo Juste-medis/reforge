@@ -67,6 +67,58 @@ def broken_bracket(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, 
     return hero_bracket(layout, offset_mm=offset_mm).difference(cut)
 
 
+def guitar_pick(layout: MatLayout, *, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """A 26 × 30 mm teardrop, mirror-symmetric about the vertical line through the free-zone centre; no holes."""
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    return Point(cx, cy + 4).buffer(13, quad_segs=64).union(Point(cx, cy - 13).buffer(1.5, quad_segs=32)).convex_hull
+
+
+def broken_pick(layout: MatLayout, *, seed: int = 0) -> Polygon:
+    """The guitar pick with one side snapped off along its length (5.8 mm from the axis, meandering): the break
+    runs along the mirror axis instead of across it, so little of the symmetry survives."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    rng = np.random.default_rng(seed)
+    y = np.arange(-20.0, 20.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((0.6, 13.0), (0.3, 5.0), (0.15, 2.1)))
+    x = 5.8 + meander + gaussian_filter1d(rng.normal(0.0, 0.1, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 30, cy + 20), (cx + 30, cy - 20)])
+    return guitar_pick(layout).difference(cut)
+
+
+def flange(layout: MatLayout) -> Polygon:
+    """A 50 mm square flange, corner radius 6 mm: a Ø22 bore and four Ø5.5 holes on a 38 mm square."""
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    plate = box(cx - 25, cy - 25, cx + 25, cy + 25).buffer(-6, quad_segs=16).buffer(6, quad_segs=16)
+    plate = plate.difference(Point(cx, cy).buffer(11, quad_segs=64))
+    for dx in (-19, 19):
+        for dy in (-19, 19):
+            plate = plate.difference(Point(cx + dx, cy + dy).buffer(2.75, quad_segs=64))
+    return plate
+
+
+def broken_flange(layout: MatLayout, *, seed: int = 2) -> Polygon:
+    """The flange with its right side snapped off 14 mm from the bore's centre: both right-hand holes are lost.
+    Only the bore pins the vertical mirror axis; the square's diagonals are real symmetries that rebuild only part
+    of the break."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    rng = np.random.default_rng(seed)
+    y = np.arange(-30.0, 30.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = 14.0 + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 60, cy + 30), (cx + 60, cy - 30)])
+    return flange(layout).difference(cut)
+
+
 @dataclass(frozen=True)
 class VirtualCamera:
     K: np.ndarray

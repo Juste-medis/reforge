@@ -221,15 +221,35 @@ def fill_polygon_exact(image: np.ndarray, rings_px: list[np.ndarray], value: int
 
     With ``linear_light`` the coverage blends light, as a camera pixel does, instead of sRGB-encoded values.
     """
+    covered = polygon_coverage(rings_px, image.shape[:2], factor)
+    if covered is None:
+        return
+    (x0, y0, x1, y1), coverage = covered
+    if linear_light:
+        region = srgb_to_linear(image[y0:y1, x0:x1])
+        light = srgb_to_linear(np.array([value], np.uint8))[0]
+        image[y0:y1, x0:x1] = linear_to_srgb(region * (1 - coverage) + light * coverage)
+        return
+    region = image[y0:y1, x0:x1].astype(np.float32)
+    image[y0:y1, x0:x1] = np.clip(np.round(region * (1 - coverage) + value * coverage), 0, 255).astype(np.uint8)
+
+
+def polygon_coverage(rings_px: list[np.ndarray], shape: tuple[int, int], factor: int = 8
+                     ) -> tuple[tuple[int, int, int, int], np.ndarray] | None:
+    """Per-pixel area coverage of a polygon with holes, as used by ``fill_polygon_exact``.
+
+    Returns the pixel box ``(x0, y0, x1, y1)`` clipped to ``shape`` (rows, cols) and the coverage in [0, 1] over it,
+    or None if the polygon is outside the image.
+    """
     from shapely.geometry import Polygon as ShapelyPolygon
 
     allpts = np.concatenate(rings_px)
     x0 = max(int(np.floor(allpts[:, 0].min())) - 1, 0)
     y0 = max(int(np.floor(allpts[:, 1].min())) - 1, 0)
-    x1 = min(int(np.ceil(allpts[:, 0].max())) + 2, image.shape[1])
-    y1 = min(int(np.ceil(allpts[:, 1].max())) + 2, image.shape[0])
+    x1 = min(int(np.ceil(allpts[:, 0].max())) + 2, shape[1])
+    y1 = min(int(np.ceil(allpts[:, 1].max())) + 2, shape[0])
     if x1 <= x0 or y1 <= y0:
-        return
+        return None
     h, w = y1 - y0, x1 - x0
     fine = np.zeros((h * factor, w * factor), np.uint8)
     shift = 8
@@ -241,14 +261,7 @@ def fill_polygon_exact(image: np.ndarray, rings_px: list[np.ndarray], value: int
         polys = [np.round(np.asarray(p.exterior.coords) * (1 << shift)).astype(np.int32) for p in parts]
         if polys:
             cv2.fillPoly(fine, polys, 1 if k == 0 else 0, cv2.LINE_8, shift)
-    coverage = fine.reshape(h, factor, w, factor).mean(axis=(1, 3))
-    if linear_light:
-        region = srgb_to_linear(image[y0:y1, x0:x1])
-        light = srgb_to_linear(np.array([value], np.uint8))[0]
-        image[y0:y1, x0:x1] = linear_to_srgb(region * (1 - coverage) + light * coverage)
-        return
-    region = image[y0:y1, x0:x1].astype(np.float32)
-    image[y0:y1, x0:x1] = np.clip(np.round(region * (1 - coverage) + value * coverage), 0, 255).astype(np.uint8)
+    return (x0, y0, x1, y1), fine.reshape(h, factor, w, factor).mean(axis=(1, 3))
 
 
 def render_layout(

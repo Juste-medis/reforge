@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from reforge.errors import ReforgeError
-from reforge.spec.partspec import Status, mat_to_model, parse_spec
+from reforge.spec.partspec import CircleHole, PartSpec, Status, mat_to_model, parse_spec
 from tests.unit.specs import bracket_dict, param, rounded_rect, spec_dict
 
 
@@ -95,3 +95,19 @@ def test_mat_to_model_keeps_handedness() -> None:
     origin = (100.0, 150.0)
     upper_left_in_photo = np.array([[90.0, 145.0]])
     assert mat_to_model(upper_left_in_photo, origin) == pytest.approx(np.array([[-10.0, 5.0]]))
+
+
+def test_unbuildable_holes_are_left_out_and_reported_not_fatal() -> None:
+    """A spurious hole at the edge or overlapping another (a reflection traced as a hole) is excluded, UNCERTAIN,
+    instead of failing the whole spec (synthetic composites of metal parts, 2026-11-02)."""
+    from reforge.pipeline import _buildable
+
+    spec = PartSpec.model_validate(bracket_dict())
+    extra = [CircleHole.model_validate({"kind": "circle", "id": hid, "center_x": param(x), "center_y": param(y),
+                                        "diameter": param(d)}) for hid, x, y, d in
+             (("H2", 38.8, 0.0, 2.0), ("H3", -28.0, 0.0, 4.2))]
+    kept, notes = _buildable(spec.outline, [*spec.holes, *extra])
+    assert [h.id for h in kept] == ["H0", "H1"]
+    assert {n["hole"]: n["status"] for n in notes} == {"H2": "UNCERTAIN", "H3": "UNCERTAIN"}
+    assert "wall" in next(n["reason"] for n in notes if n["hole"] == "H2")
+    assert "another hole" in next(n["reason"] for n in notes if n["hole"] == "H3")

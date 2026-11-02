@@ -68,10 +68,11 @@ def test_broken_part_axis_is_pinned_by_the_holes(seed: int, rotation: float, noi
     assert axis.support > 0.99 and axis.hole_matches == 2
     assert _offset_from(axis, (CX, CY)) < 0.02
     assert axis.offset_ambiguity_mm <= 0.5
-    # Any other vertical-ish candidate that slid along the part must be contradicted by the holes.
+    # Any other vertical-ish candidate that slid along the part must be contradicted by the holes, or (through the
+    # hole next to the break, whose partner's mirror lands in the missing end) confirmed by far less outline.
     for other in axes:
         if other is not axis and abs((other.angle_deg - lengthwise + 90) % 180 - 90) < 1.0:
-            assert other.contradicted_by_holes
+            assert other.contradicted_by_holes or other.matched_mm < 0.5 * axis.matched_mm
 
 
 def test_axis_with_nothing_to_pin_it_is_reported_as_ambiguous() -> None:

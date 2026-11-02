@@ -71,10 +71,22 @@ class Completion:
     inferred_holes: tuple[InferredHole, ...]
     hole_checks: tuple[HoleCheck, ...]
     asymmetric_holes: tuple[str, ...]  # holes whose mirror lands on solid, hole-free material
+    confirmed_mm: float = 0.0  # evidence: outline whose mirror lands on the outline, plus matched holes' circumference
 
     @property
     def added_area_mm2(self) -> float:
         return float(sum(r.area_mm2 for r in self.regions if r.filled))
+
+    @property
+    def exposed_fracture_mm(self) -> float:
+        """Length of fracture edge the mirror didn't cover: it stays on the completed outline, UNCERTAIN."""
+        return float(sum(r.end - r.start + 1 for r in self.runs if r.status == "UNCERTAIN"
+                         and r.source.startswith("fracture edge")) * RUN_SPACING_MM)
+
+    @property
+    def inferred_length_mm(self) -> float:
+        """Length of completed outline that the mirror invents (INFERRED)."""
+        return float(sum(r.end - r.start + 1 for r in self.runs if r.status == "INFERRED") * RUN_SPACING_MM)
 
     def inferred_uncertainty_mm(self) -> float:
         """2σ for mirrored geometry, before adding the source edge's own uncertainty (PLAN §6.6): the mirror's
@@ -160,7 +172,10 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
             inferred.append(InferredHole(hid, (float(image[0]), float(image[1])), float(radius)))
         elif observed.contains(Point(image)):
             asymmetric.append(hid)
-    return Completion(axis, pts, runs, tuple(regions), tuple(inferred), tuple(hole_checks), tuple(asymmetric))
+    radius = {hid: r for hid, _, r in holes}
+    confirmed = axis.matched_mm + sum(2 * np.pi * radius[h.hole_id] for h in hole_checks)
+    return Completion(axis, pts, runs, tuple(regions), tuple(inferred), tuple(hole_checks), tuple(asymmetric),
+                      float(confirmed))
 
 
 def _runs(keys: list[tuple[str, str]], axis: MirrorAxis) -> tuple[Run, ...]:

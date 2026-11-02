@@ -30,6 +30,7 @@ from reforge.reasoning.interpret import GeometricInterpreter
 from reforge.reasoning.reconstruct import Reconstruction, reconstruct
 from reforge.spec.partspec import (
     MAX_POINTS,
+    MIN_WALL_MM,
     CircleHole,
     Evidence,
     Outline,
@@ -82,6 +83,27 @@ def _outline_in_model_frame(points_mat: np.ndarray, origin: tuple[float, float],
         OutlineRun(start=a, end=b, status=status, source=source[:120]) for a, b, status, source in runs))
 
 
+def _buildable(outline: Outline, holes: list[CircleHole | PolygonHole]
+               ) -> tuple[list[CircleHole | PolygonHole], list[dict]]:
+    """The holes a solid can be built with: inside the outline with ``MIN_WALL_MM`` of wall, and that far apart.
+    The others are left out and reported UNCERTAIN, rather than failing the whole spec. Larger holes are kept first."""
+    body = Polygon(outline.points).buffer(0).buffer(-MIN_WALL_MM, join_style="mitre")
+    kept: list[CircleHole | PolygonHole] = []
+    notes: list[dict] = []
+    for hole in sorted(holes, key=lambda h: -h.disc().area):
+        disc = hole.disc()
+        if not body.contains(disc):
+            reason = f"less than {MIN_WALL_MM} mm of wall to the outline: left out; check the photo"
+        elif any(disc.distance(k.disc()) < MIN_WALL_MM for k in kept):
+            reason = f"less than {MIN_WALL_MM} mm from another hole: left out; check the photo"
+        else:
+            kept.append(hole)
+            continue
+        notes.append({"hole": hole.id, "excluded": True, "status": Status.UNCERTAIN.value, "reason": reason})
+    order = {h.id: i for i, h in enumerate(holes)}
+    return sorted(kept, key=lambda h: order[h.id]), notes
+
+
 def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Completion | None = None
                     ) -> tuple[PartSpec, list[dict]]:
     """The footprint as a PartSpec in the model frame, plus notes on anything left out.
@@ -104,9 +126,9 @@ def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Compl
     holes: list[CircleHole | PolygonHole] = []
     sigma = profile.edge_sigma_mm or 0.0
     for cand in profile.holes:
-        if cand.glare_suspect:
+        if cand.doubt:
             notes.append({"hole": cand.hole_id, "excluded": True, "status": Status.UNCERTAIN.value,
-                          "reason": "brighter than the mat paper: possibly glare, not a hole; confirm to include"})
+                          "reason": cand.doubt})
             continue
         hid = f"H{len(holes)}"
         fit = cand.fit or fit_circle(cand.contour.points_mm)
@@ -135,6 +157,8 @@ def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Compl
         holes.append(CircleHole(id=f"H{len(holes)}", center_x=Param(value=cx, status=Status.INFERRED, evidence=ev),
                                 center_y=Param(value=cy, status=Status.INFERRED, evidence=ev),
                                 diameter=Param(value=2 * radius, status=Status.INFERRED, evidence=ev)))
+    holes, dropped = _buildable(outline, holes)
+    notes += dropped
     try:
         spec = PartSpec(outline=outline, holes=tuple(holes), thickness=thickness)
     except ValueError as exc:  # pydantic ValidationError subclasses ValueError
@@ -175,7 +199,7 @@ def _overlay(view: RectifiedView, seg: Segmentation, profile: RefinedProfile, fo
     thin, thick = max(1, int(round(k * 0.6))), max(2, int(round(k * 1.2)))
     cv2.polylines(out, [to_px(profile.outer.points_mm)], True, (255, 90, 0), thin, cv2.LINE_AA)
     for h in profile.holes:
-        color = (0, 200, 255) if h.glare_suspect else (60, 220, 60)
+        color = (0, 200, 255) if h.doubt else (60, 220, 60)
         cv2.polylines(out, [to_px(h.contour.points_mm)], True, color, thin, cv2.LINE_AA)
     for contour in (footprint.outer, *(h.contour for h in footprint.holes)):
         cv2.polylines(out, [to_px(contour.points_mm)], True, (255, 230, 0), thin, cv2.LINE_AA)
@@ -204,6 +228,7 @@ def _reconstruction_report(recon: Reconstruction) -> dict:
         closed = np.vstack([c.points, c.points[:1]])
         completion = {
             "axis": c.axis.axis_id, "added_area_mm2": round(c.added_area_mm2, 2),
+            "inferred_outline_mm": round(c.inferred_length_mm, 2), "confirmed_mm": round(c.confirmed_mm, 2),
             "inferred_u_mm_2sigma": round(c.inferred_uncertainty_mm(), 4),
             "extent_mm": _extent(c.points),
             "regions": [{"area_mm2": round(r.area_mm2, 2), "filled": r.filled, "reason": r.reason} for r in c.regions],
@@ -224,7 +249,8 @@ def _reconstruction_report(recon: Reconstruction) -> dict:
         "segments": [{"id": s.seg_id, "kind": s.kind, "length_mm": round(s.length_mm, 2), "pieces": s.pieces,
                       "fit_rms_mm": round(s.fit_rms_mm, 4)} for s in recon.segmented.segments],
         "axes": [{"id": a.axis_id, "angle_deg": round(a.angle_deg, 4), "support": round(a.support, 4),
-                  "inlier_rms_mm": round(a.inlier_rms_mm, 4), "holes_matched": a.hole_matches,
+                  "inlier_rms_mm": round(a.inlier_rms_mm, 4), "outline_confirming_mm": round(a.matched_mm, 1),
+                  "holes_matched": a.hole_matches,
                   "holes_contradicting": a.hole_mismatches, "angle_sigma_deg": a.angle_sigma_deg,
                   "offset_sigma_mm": a.offset_sigma_mm, "offset_ambiguity_mm": a.offset_ambiguity_mm,
                   "sources": list(a.sources)} for a in recon.axes],

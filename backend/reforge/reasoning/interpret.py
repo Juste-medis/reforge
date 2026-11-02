@@ -55,6 +55,7 @@ class InterpretationRequest:
     axis_ids: list[str]
     hole_ids: list[str]
     segment_kinds: dict[str, str] = field(default_factory=dict)  # for the geometric rule only; never sent to a model
+    rebuild_ok: dict[str, bool] = field(default_factory=dict)  # trial rebuild on the irregular segments; rule only
 
 
 @dataclass(frozen=True)
@@ -147,17 +148,24 @@ class GeometricInterpreter:
         axes = {a["id"]: a for a in req.facts.get("mirror_axes", [])}
         usable = [aid for aid in req.axis_ids
                   if axes[aid]["support"] >= MIN_AXIS_SUPPORT and axes[aid]["holes_contradicting"] == 0]
-        # Every usable axis is already well supported; among them, the most holes matched, then the most material
-        # the mirror rebuilds (a crosswise axis maps the break onto itself and rebuilds almost nothing).
-        axis = max(usable, key=lambda aid: (axes[aid]["holes_matched"], axes[aid]["mirror_would_add_mm2"],
-                                            axes[aid]["support"])) if fracture and usable else NONE_ID
+        # Only axes whose trial rebuild covers the whole break and is confirmed by enough outline (the checks every
+        # interpreter's choice must pass afterwards); among them, the most holes matched, then the most material
+        # rebuilt (a crosswise axis maps the break onto itself and rebuilds almost nothing).
+        trusted = [aid for aid in usable if req.rebuild_ok.get(aid, True)]
+        axis = max(trusted, key=lambda aid: (axes[aid]["holes_matched"], axes[aid]["mirror_would_add_mm2"],
+                                             axes[aid]["support"])) if fracture and trusted else NONE_ID
+        reason = ("geometric rule: a well-supported axis whose trial rebuild covers the break; most holes matched, "
+                  "then most material rebuilt")
+        if fracture and usable and not trusted:
+            reason = ("geometric rule: no axis's trial rebuild both covers the break and is confirmed by as much "
+                      "outline as it would invent")
         data = {
             "object_name": "part", "family": "extruded_profile",
             "family_reason": "geometric rule: a single top-view outline is always treated as an extruded profile",
             "is_broken": bool(fracture), "fracture_segment_ids": fracture,
             "fracture_reason": "geometric rule: segments made of many short pieces (irregular)",
             "symmetry": "mirror" if axis != NONE_ID else "unsure", "mirror_axis_id": axis,
-            "symmetry_reason": "geometric rule: a well-supported axis; most holes matched, then most material rebuilt",
+            "symmetry_reason": reason,
             "holes": [{"hole_id": h, "role": "unknown"} for h in req.hole_ids],
             "missing_features": [],
             "required_measurements": [{"kind": "thickness", "target_id": NONE_ID, "why": "sets the extrusion"}]
