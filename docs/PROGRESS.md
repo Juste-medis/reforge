@@ -396,3 +396,33 @@ Simulated on the hero bracket (80 × 28 × 3 mm), uncorrected:
 **Next**
 - D5: the Confidence Engine (±U for every dimension, coverage check, export gate) and caliper overrides.
 - The user: photos of a real part, following PLAN §5.2.
+
+## 2026-11-02 (Mon, evening): Session 9, a test set for the app, and four robustness fixes
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-11-02 entry)
+- ✅ **Test set for the app** (`backend/tools/make_test_photos.py`):
+  - **What it makes:** 20 JPEGs with truth files in the gitignored `tmp/tests/`. 13 come from Unsplash stock photos of real parts (4 guitar picks, spanners, keys, a 200 mm adjustable wrench), cut out and placed at chosen sizes; 7 are rendered plastic parts (bracket ×3, washer, slotted link, L-plate, broken flange).
+  - **Camera:** the harness's, at 3024 × 4032 px, with an EXIF 52 mm focal.
+  - **Labelling:** SYNTHETIC COMPOSITE in every file's EXIF and in the README.
+  - Prompted by the user's own uploads, which were all one rusty-pipe web image (correctly refused).
+- ✅ **Results:**
+  - **Live (SAM 3.1 + Spark):** 14 built, 6 forged-metal tools refused `FAMILY_UNSUPPORTED` with reasons.
+  - **Accuracy:** plastic parts within 0.07 mm. The broken bracket and flange were rebuilt within 0.04 mm of the intact truth, including the flange's two holes lost in the break.
+- ✅ **Fixes found by the set:**
+  1. **Reflections taken for holes:** they are doubted unless paper-coloured or round. A hole that can't be built is excluded, UNCERTAIN, instead of failing the spec.
+  2. **The evidence rule:** a mirror must be confirmed by as much outline as it invents. A side-broken pick had been rebuilt 30 × 40 mm for 17 × 29.
+  3. **Axis candidates:** axes through each hole centre are now candidates; every candidate is trial-rebuilt; any chosen axis must cover the break; tied axes rank by confirming outline; a tie in hole votes counts against an axis.
+  4. **Axis fit:** a final least-squares fit of the axis angle and offset.
+- ✅ **UI:** the reconstruction card shows the evidence balance (mm confirming vs mm invented).
+- ✅ **Tests:** 142 offline pass, 8 of them new. Ruff clean; the frontend type-checks and builds.
+- **Spend 2026-11-02:** ledger $0.69, of which about $0.63 is the two live runs of the test set and the rest the user's own app runs. About $0.85 in total of the $150.
+
+**Open**
+- 🟡 **Hole doubt thresholds** (ΔE 5, compactness 0.75) are calibrated on composites only; shading in real holes may raise ΔE.
+- 🟡 **Spark's family verdict varies between runs** on borderline metal parts (08 and 11 swapped).
+- 📋 **D5:** the Confidence Engine must add the source hole's own error to INFERRED holes. The flange's were 0.058 mm off, against a mirror-only 2σ of 0.031 mm.
+- ⏳ **AT-3:** a real photo of a real part on the printed mat.
+
+**Next**
+- **The user:** try `tmp/tests/14…20` and `01…04` in the UI (thickness per `tmp/tests/README.md`), then photograph a real part.
+- **D5:** the Confidence Engine and the export gate.

@@ -361,3 +361,76 @@ Spark is sent the measured facts and two images. It is **not** told which segmen
 
 - A real photo of a real broken part (AT-3, then M2's "two real broken parts").
 - Spark's agreement rate over many parts. Three readings of one synthetic part are not an accuracy figure.
+
+---
+
+## 2026-11-02 · A 20-photo test set from stock photos of real parts; four robustness fixes · SYNTHETIC COMPOSITES, plus live SAM 3.1 + Muse Spark
+
+**Why:** the user's own test uploads were all one web image of a rusty pipe (on and off the mat PDF), correctly refused. There is still no real photo of a real part on the printed mat (AT-3).
+
+**Conditions (`backend/tools/make_test_photos.py`; images and truth files in the gitignored `tmp/tests/`)**
+- **Real:** each part's texture and outline come from a stock photo (Unsplash License; author and page in each truth file). The sources are 4 guitar picks on wood, open-end spanners and keys on black, a skeleton key, and a 200 mm adjustable wrench.
+- **Chosen, so exact ground truth:** the size (longest side 30–200 mm), thickness (0.8–6 mm), placement and any break. A side-broken pick's intact outline is first made exactly symmetric (its intersection with its mirror image), because a stock photo taken at an angle makes a symmetric part look asymmetric.
+- **Plus 7 rendered plastic parts in flat colours:** the hero bracket (intact, and broken with seeds 0 and 3), a washer, a slotted link, an L-plate, and a 50 mm square flange whose break took two of its four holes.
+- **Camera:** the test harness (pinhole, the part's height parallax, linear-light blur σ 0.9 px), with colour, a mild illumination gradient, noise σ 1.5, JPEG q92 and EXIF 52 mm (the 2× lens of PLAN §5.2), at 3024 × 4032 px.
+- **Not modelled:** shadows, lens distortion, phone sharpening. Every file says SYNTHETIC COMPOSITE in its EXIF description.
+
+### 1. Offline: classical segmentation + geometric rule (not AI), final code
+
+| image | truth L × W (mm) | outcome | ΔL, ΔW (mm) | outline Hausdorff / p95 (mm) | holes found / truth (doubted) |
+|---|---|---|---|---|---|
+| 01 pick, red | 18.72 × 29.07 | built | −0.019, −0.027 | 0.552 / 0.016 | 0 / 0 |
+| 02 pick, blue | 18.83 × 28.86 | built | −0.041, −0.072 | 0.611 / 0.042 | 0 / 0 |
+| 03 pick, green | 25.33 × 31.28 | built | −0.008, −0.035 | 0.812 / 0.334 | 0 / 0 |
+| 04 pick, white (low contrast) | 22.00 × 29.99 | built | −0.074, −0.310 | 1.543 / 0.891 | 0 / 0 |
+| 05 pick, red, side broken | 17.10 × 29.13 intact | not rebuilt | (as photographed) | | 0 / 0 |
+| 06 pick, green, side broken | 24.21 × 29.60 intact | not rebuilt | (as photographed) | | 0 / 0 |
+| 07–10, 13 spanners and wrench (metal) | | built | up to −5.1, −9.8 | up to 25.4 / 7.8 | spurious 1–10 kept (2–47 doubted) |
+| 11 key (metal) | 39.52 × 45.39 | built | −0.366, −0.015 | 0.328 / 0.179 | 1 / 1 |
+| 12 skeleton key (metal) | 36.52 × 85.78 | built | −0.026, −0.067 | 0.386 / 0.046 | 1 / 1 (2) |
+| 14 bracket | 80.00 × 28.00 | built | +0.010, +0.024 | 0.013 / 0.009 | 2 / 2 |
+| 15 bracket, broken | 80.00 × 28.00 intact | rebuilt | +0.030, +0.039 | 0.020 / 0.016 | 2 / 2 |
+| 16 bracket, dark, broken | 80.00 × 28.00 intact | rebuilt | +0.016, +0.008 | 0.013 / 0.006 | 2 / 2 |
+| 17 washer | 30.00 × 30.00 | built | +0.036, +0.041 | 0.031 / 0.025 | 1 / 1 |
+| 18 slotted link | 63.03 × 44.00 | built | +0.003, +0.003 | 0.012 / 0.008 | 3 / 3 |
+| 19 L-plate | 60.49 × 57.64 | built | +0.003, −0.001 | 0.136 / 0.010 | 3 / 3 |
+| 20 flange, broken | 50.00 × 50.00 intact | rebuilt, both lost holes inferred | +0.024, +0.026 | 0.033 / 0.021 | 5 / 5 |
+
+- The outline distances are against the intact part for rebuilt parts.
+- **The picks' Hausdorff of 0.5–0.8 mm is a real local defect:** a glossy highlight at the edge pulls the traced edge about 0.5 mm inwards over a short stretch. The p95 stays at 0.02–0.04 mm on the red and blue picks.
+- **Metal tools are out of scope** (not single-colour, not uniform thickness). Polished steel near paper brightness defeats the classical boundary.
+
+### 2. Live: SAM 3.1 + Muse Spark 1.3 (standard tier, `reasoning_effort` low), final code, 20 images
+
+- **Built, 14 images.** 01–06 match the offline numbers within 0.03 mm; the white pick is better with SAM (−0.053, +0.021). Also 11 key, and 14–20 (rebuilt parts within 0.04 mm of the intact truth, both of the flange's lost holes inferred).
+- **Refused `FAMILY_UNSUPPORTED`, 6 images (07, 08, 09, 10, 12, 13).** Spark's reasons, e.g. "Drop-forged steel wrench with dished handle and tapered jaws", "3D metal key with round shank, turned collar and thick bit".
+- **Spark named the parts** "red guitar pick", "flat washer", "slotted flat link bar", "L-shaped mounting bracket", "square mounting flange plate", "rectangular mounting strap plate". The side-broken picks it called "red petal-shaped fragment" and "green petal fragment".
+- **Spark is not consistent on borderline metal parts.** An earlier run on the first 16 images (before fixes 3 and 4) accepted 08 and refused 11 (`multi_view`); the final run did the opposite.
+- **Spend:** this run $0.370 for 20 SAM and 20 Spark calls ($0.015–0.021 per image). The earlier 16-image run was about $0.26. Ledger total for 2026-11-02: $0.69, including the user's own runs.
+
+### 3. Four defects the set exposed, fixed the same day (before → after)
+
+1. **Reflections taken for holes, and a crash.**
+   - **Before:** a hole was any paper-light region along the paper→part colour line. Polished steel qualifies, so the classical path found up to 57 candidates on the adjustable wrench, and three images failed with `SPEC_INVALID` (holes too close to an edge or to each other).
+   - **Measured separation** (the hole's core against the paper within 15 mm, lightness half-weighted): real holes ΔE p90 ≤ 3.1 with compactness ≥ 0.78; reflections and engravings ΔE p90 ≥ 5.6, compactness mostly < 0.5.
+   - **Fix:** a candidate that isn't paper-coloured (p90 > 5) *and* isn't round (< 0.75) is doubted: excluded, UNCERTAIN, "confirm to include", like glare. A hole the solid can't be built with is excluded the same way, instead of failing the spec.
+   - **Caveat:** both thresholds are calibrated on composites only; shading inside a real hole may raise its ΔE (which is why round holes are kept regardless). To be checked at AT-3.
+2. **A confident wrong rebuild of a side-broken pick.**
+   - **Before:** the break was about 40 % of the outline. Every axis then reached 100 % support on what was left, and the rule took the one adding the most material: rebuilt 29.9 × 39.6 mm for a 17.1 × 29.1 mm pick. On a rendered teardrop, 3 seeds of 4 came out 28–31 mm wide for 26 mm.
+   - **Fix:** the mirror must be confirmed by at least as much outline (plus matched holes' circumference) as it invents (`AXIS_UNDERSUPPORTED`). The picks are now built as photographed, and the report says why.
+3. **The flange's rebuilding axis wasn't a candidate, then a diagonal was used.**
+   - Candidates came from hole *pairs*; the bore alone was on the vertical axis.
+   - **Fix, part 1:** axes through each hole centre are now candidates. Ties at 100 % support rank by confirming outline. A tie in hole votes counts against an axis.
+   - The square's diagonal, a real symmetry, then rebuilt only part of the break, leaving a corner off (Hausdorff 10 mm).
+   - **Fix, part 2:** every candidate is trial-rebuilt on the irregular segments. The rule uses only axes whose rebuild covers the break and is confirmed. Any interpreter's choice must pass the same checks (`AXIS_PARTIAL`, `AXIS_UNDERSUPPORTED`).
+4. **An axis angle the fit couldn't correct.**
+   - **Before:** the flange's evidence is straight edges, which give every midpoint on the current axis. The axis stayed 0.37° off, and the flange came out 0.25 mm too large against a stated 2σ of 0.205 mm.
+   - **Fix:** a final least-squares fit of angle and offset on the mirror images' distance to the outline. Result: 90.025°, +0.024/+0.026 mm, 2σ 0.015 mm.
+
+Six offline tests cover these: a streak doubted, holes left out, the side-broken pick (3 seeds), the bracket's evidence, the flange rebuilt, and a diagonal rejected. 142 pass.
+
+### 4. Still open
+
+- **The flange's inferred hole centres are 0.058 mm off, against a mirror-only 2σ of 0.031 mm.** That U leaves out the source hole's own error; 📋 the Confidence Engine (D5) adds it.
+- **The composites prove the pipeline on real textures, not on real photos:** no shadows, no phone processing. AT-3 is still needed.
+- **Spark's family verdict varies between runs on borderline (metal) parts.** No accuracy rate is claimed.

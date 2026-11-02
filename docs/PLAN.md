@@ -492,6 +492,11 @@ If we're behind schedule at G3, M3 is dropped and D8 becomes buffer.
 
 ### 6.5 Symmetry and completion (deterministic and measurable)
 
+> **Status (2026-11-02):** ✅ hardened on a 20-photo composite test set (`docs/EVALUATION.md`, 2026-11-02).
+> - Every candidate axis is trial-rebuilt. A rebuild is used only if it covers the break (`AXIS_PARTIAL`) and is confirmed by at least as much outline and matched holes as it invents (`AXIS_UNDERSUPPORTED`). This applies to any interpreter's choice.
+> - Axes through each hole centre are candidates, and a final least-squares fit of the angle uses the straight edges' lever arm.
+> - A side-broken part with too little surviving symmetry is built as photographed, with the reason given.
+>
 > **Status (2026-10-28):** ✅ mirror search and completion (`geometry/segments.py`, `symmetry.py`, `completion.py`). 📋 rotational search.
 > - **Fracture evidence:** a primitive-piece decomposition; a fracture is a run of short pieces.
 > - **Support and holes are kept apart:** a mixed score once let an axis 3.4 mm off rebuild the part 6.9 mm long. Holes pin the axis; `offset_ambiguity_mm` reports where nothing does.
@@ -769,6 +774,17 @@ Without a printer, that's stated rather than implied.
 ---
 
 ## 10. Milestone 1: first end-to-end vertical slice (target Wed 28 Oct)
+
+> **Status (2026-11-02, evening):**
+> - ✅ A 20-photo test set for the app (`backend/tools/make_test_photos.py`): stock photos of real parts and rendered plastic parts, composited onto the mat at known sizes. These are SYNTHETIC COMPOSITES, not real photos.
+>   - Live (SAM 3.1 + Spark): 14 built, 6 metal tools correctly refused `FAMILY_UNSUPPORTED`.
+>   - Plastic parts within 0.07 mm. Broken bracket and flange rebuilt within 0.04 mm, with the flange's two lost holes inferred.
+> - ✅ Four defects found by the set and fixed:
+>   - reflections taken for holes, and a `SPEC_INVALID` crash;
+>   - a confident wrong rebuild of a side-broken part;
+>   - a missing axis candidate, and a partial rebuild by a diagonal;
+>   - an axis angle 0.37° off.
+> - ⏳ AT-3 still needs a real photo of a real part on the printed mat.
 
 > **Status (2026-10-28, evening):**
 > - ✅ D4: a broken part is rebuilt from one synthetic photo, through SAM 3.1, Muse Spark, verification and mirror completion with provenance.
