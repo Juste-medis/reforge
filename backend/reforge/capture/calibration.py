@@ -188,6 +188,18 @@ def _fit_debiased(corners_px: np.ndarray, corners_mm: np.ndarray) -> tuple[np.nd
     return h, bias
 
 
+def _flat_sheet_disagreement_mm(corners_px: np.ndarray, corners_mm: np.ndarray) -> float:
+    """How far the worst marker sits from the best flat-sheet fit of all markers found (mean over its corners, mm).
+
+    Measured on real prints (2026-11-03): about 0.5 mm with a lifted corner, 1.5 mm for a mat lying on a binder."""
+    h, bias = _fit_debiased(corners_px, corners_mm)
+    if h is None:
+        return float("nan")
+    debiased = corners_px + bias * _diagonals(corners_px)
+    errors = _apply(h, debiased.reshape(-1, 2)).reshape(corners_mm.shape) - corners_mm
+    return float(np.linalg.norm(errors.mean(axis=1), axis=1).max())
+
+
 def _local_px_per_mm(mm_to_px: np.ndarray, point_mm: tuple[float, float]) -> float:
     """sqrt(|det J|) of the mm→px homography at ``point_mm``: the local linear resolution."""
     x, y = point_mm
@@ -238,14 +250,22 @@ def calibrate(
     inliers = inlier_mask.reshape(-1, 4).all(axis=1)
     if not inliers.all():
         dropped = [d.marker_id for d, ok in zip(detections, inliers, strict=True) if not ok]
-        warnings.append(CalibrationWarning("CAL_MARKERS_REJECTED", f"Inconsistent markers ignored: {dropped}."))
+        off_mm = _flat_sheet_disagreement_mm(src.reshape(-1, 4, 2), dst.reshape(-1, 4, 2))
+        detected = len(detections)
         detections = [d for d, ok in zip(detections, inliers, strict=True) if ok]
         if len(detections) < MIN_MARKERS:
             raise ReforgeError(
-                "CAL_MARKERS_INSUFFICIENT",
-                f"Only {len(detections)} consistent markers remain; at least {MIN_MARKERS} are needed.",
-                "Make sure the mat lies flat and is not folded.",
+                "CAL_MAT_NOT_FLAT",
+                f"The mat isn't lying flat: its markers disagree with a flat sheet by up to {off_mm:.1f} mm, and only "
+                f"{len(detections)} of the {detected} markers found agree with each other (at least {MIN_MARKERS} are "
+                "needed). Measuring on a bent mat would be off by about as much.",
+                "Lay the mat flat on a hard table, not on a binder, a book or a curved surface, and photograph it "
+                "from above.",
             )
+        warnings.append(CalibrationWarning(
+            "CAL_MARKERS_REJECTED",
+            f"Markers {dropped} were ignored: the markers found disagree with a flat sheet by up to {off_mm:.1f} mm. "
+            "Is a corner of the mat lifted or curled?"))
         src = np.concatenate([d.corners_px for d in detections])
         dst = np.concatenate([layout.marker(d.marker_id).corners_mm() for d in detections])
 

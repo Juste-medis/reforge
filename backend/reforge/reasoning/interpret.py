@@ -154,9 +154,15 @@ class GeometricInterpreter:
         trusted = [aid for aid in usable if req.rebuild_ok.get(aid, True)]
         axis = max(trusted, key=lambda aid: (axes[aid]["holes_matched"], axes[aid]["mirror_would_add_mm2"],
                                              axes[aid]["support"])) if fracture and trusted else NONE_ID
-        reason = ("geometric rule: a well-supported axis whose trial rebuild covers the break; most holes matched, "
-                  "then most material rebuilt")
-        if fracture and usable and not trusted:
+        if axis != NONE_ID:
+            reason = ("geometric rule: a well-supported axis whose trial rebuild covers the break; most holes matched, "
+                      "then most material rebuilt")
+        elif not fracture:
+            reason = "geometric rule: no irregular, break-like segment, so there is nothing to rebuild"
+        elif not usable:
+            reason = (f"geometric rule: no mirror axis is supported by {MIN_AXIS_SUPPORT:.0%} of the outline and "
+                      "contradicted by no hole, so the part is built as photographed")
+        else:
             reason = ("geometric rule: no axis's trial rebuild both covers the break and is confirmed by as much "
                       "outline as it would invent")
         data = {

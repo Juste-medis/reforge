@@ -1,4 +1,6 @@
-// Mirrors backend/reforge/pipeline.py report.json (M1). To be generated from OpenAPI in a later milestone.
+// Mirrors backend/reforge/pipeline.py (report.json) and backend/reforge/api/app.py (job status, samples).
+
+export type Status = "MEASURED" | "OBSERVED" | "INFERRED" | "UNCERTAIN";
 
 export interface Issue {
   code: string;
@@ -88,10 +90,12 @@ export interface Reconstruction {
     is_ai: boolean;
     latency_s: number;
     cost_usd: number;
-    fallback_reason: Issue | null;
+    fallback_reason: { code: string; message: string; hint: string | null } | null;
+    detail: Record<string, unknown>;
     analysis: PartAnalysis;
   };
   verification: VerificationNote[];
+  segments: { id: string; kind: string; length_mm: number; pieces: number; fit_rms_mm: number }[];
   axes: Axis[];
   completion: Completion | null;
 }
@@ -118,18 +122,59 @@ export interface Refinement {
 export interface Hole {
   id: string;
   kind: "circle" | "polygon";
-  status: string;
+  status: Status;
   diameter_mm?: number;
+  diameter_u_mm?: number | null;
   center_mm?: [number, number];
   source?: string;
 }
 
+export interface ExcludedCandidate {
+  hole: string;
+  reason: string;
+  status: string;
+}
+
 export interface Part {
   overall_mm: [number, number, number];
-  overall_status: string;
+  overall_status: Status;
+  size_mm: { length: number; width: number; thickness: number; angle_deg: number; basis: string };
   holes: Hole[];
-  excluded_candidates: { hole: string; reason: string; status: string }[];
+  excluded_candidates: ExcludedCandidate[];
   unresolved: string[];
+}
+
+export interface Term {
+  name: string;
+  sigma_mm: number;
+  basis: string;
+}
+
+export interface Dimension {
+  id: string;
+  label: string;
+  value_mm: number | null;
+  status: Status;
+  u_mm: number | null;
+  dominant: string | null;
+  terms: Term[];
+  note?: string;
+}
+
+export interface Confidence {
+  note: string;
+  budget: {
+    calibration_mm: number;
+    calibration_basis: string;
+    scale_rel: number;
+    scale_checked: boolean;
+    scale_basis: string;
+    edge_mm: number;
+    edge_basis: string;
+    height_mm: number;
+    bars_checked: number;
+  };
+  dimensions: Dimension[];
 }
 
 export interface Check {
@@ -157,26 +202,85 @@ export interface Report {
   height_correction: HeightCorrection;
   reconstruction: Reconstruction;
   part: Part;
+  confidence: Confidence;
   validation: Validation;
   timings_s: Record<string, number>;
   outputs: string[];
   disclaimer: string;
 }
 
-export interface JobResponse {
-  job_id: string;
-  report: Report;
-  files: Record<string, string>;
+export type Files = Record<string, string>;
+
+export interface Sample {
+  id: string;
+  title: string;
+  story: string;
+  thickness_mm: number;
+  kind: "synthetic";
+  label: string;
+  image_url: string;
+  thumb_url: string;
+  truth: {
+    basis: string;
+    length_mm: number;
+    width_mm: number;
+    holes: { diameter_mm?: number; slot_mm?: [number, number]; count: number }[];
+    photographed: string;
+  };
 }
 
-export interface Health {
-  ok: boolean;
-  meta_key_configured: boolean;
-  segmentation_model: string;
+export interface StageState {
+  id: string;
+  state: "pending" | "running" | "done" | "stopped";
+  seconds: number | null;
+}
+
+export interface JobRequest {
+  created_at?: string;
+  image_size?: [number, number] | null;
+  sample?: string | null;
+  from_job?: string | null;
+  thickness_mm?: number;
+  bar_x_mm?: number | null;
+  bar_y_mm?: number | null;
+  segmenter?: "sam" | "classical";
+  prompt?: string;
+  interpreter?: "spark" | "geometric";
+  focal_35mm?: number | null;
+  sample_info?: Sample;
 }
 
 export interface ApiErrorBody {
   code: string;
   message: string;
   hint: string | null;
+  job_id?: string; // the job folder that kept the request and this error
+}
+
+export interface JobStatus {
+  job_id: string;
+  state: "queued" | "running" | "done" | "failed" | "interrupted";
+  request: JobRequest;
+  stages: StageState[];
+  elapsed_s: number | null;
+  result?: { report: Report; files: Files };
+  error?: ApiErrorBody;
+}
+
+export interface Health {
+  ok: boolean;
+  meta_key_configured: boolean;
+  segmentation_model: string;
+  reasoning_model: string;
+  busy: boolean;
+  ai_budget?: { cap_usd: number; spent_today_usd: number };
+}
+
+export interface JobOptions {
+  thickness_mm: number;
+  bar_x_mm?: number;
+  bar_y_mm?: number;
+  segmenter: "sam" | "classical";
+  interpreter: "spark" | "geometric";
+  prompt: string;
 }

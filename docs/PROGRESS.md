@@ -426,3 +426,113 @@ Simulated on the hero bracket (80 × 28 × 3 mm), uncorrected:
 **Next**
 - **The user:** try `tmp/tests/14…20` and `01…04` in the UI (thickness per `tmp/tests/README.md`), then photograph a real part.
 - **D5:** the Confidence Engine and the export gate.
+
+## 2026-11-03 (Tue): Session 10, user's real photos placed on the mat
+
+**Done** (all in gitignored `tmp/realphotos_mat/`, labelled SYNTHETIC COMPOSITE in EXIF and README)
+- ✅ **4 composites** from `tmp/realphotos/` (cut out, placed at known size, rendered by the test-set camera at 3024×4032, EXIF 52 mm):
+  - `01_comb.jpg` (IMG_1050): 168.28 mm long, CHOSEN; thickness 3.0 CHOSEN. Teeth gaps preserved (minimal morphology: `cut_out`'s 29 px close would have filled them).
+  - `02_case.jpg` (IMG_1051): 150.09 mm, CHOSEN; thickness 25.0 CHOSEN. Cut out by seeded full-resolution GrabCut intersected with a paper mask.
+  - `03_screwdriver.jpg` (IMG_1052): scaled by MEASURED handle Ø 14.1 mm (caliper LCD in IMG_1053/1054); thickness 14.1.
+  - `04_cone.jpg` (IMG_1055): scaled by MEASURED wide-end 12.51 mm (LCD in IMG_1057, angled photo so approximate); thickness 12.5.
+  - Not placed: IMG_1053/1054/1057 are caliper shots (source of the two MEASURED sizes); IMG_1056 is a blurrier duplicate of IMG_1055.
+- ✅ **Offline verification** (classical + geometric, $0): all four calibrate (fit RMS 0.006–0.007 mm, no warnings) and build valid models within 0.05 mm of truth on extents. Comb: 3 of 236 gap fragments kept as holes (the rest doubted as elongated — expected); screwdriver: 1 specular hole misread (minor).
+- ✅ Generator archived as `tmp/realphotos_mat/make_realphoto_composites.py`; truth files record the size/thickness basis per image.
+
+**Open**
+- 🟡 Live behaviour (SAM 3.1 + Spark) untested on these four; case/screwdriver/cone are 3D out-of-scope probes and may be refused `FAMILY_UNSUPPORTED`.
+- 📋 Caliper readings that would replace the CHOSEN sizes are listed in `tmp/realphotos_mat/README.md`.
+
+**Next**
+- **The user:** try the four composites in the UI (thickness per README), then photograph a real flat part on the printed mat (AT-3).
+- **D5:** the Confidence Engine and the export gate.
+
+## 2026-11-03 (Tue): Session 11, first real photos of the printed mat
+
+**Done**
+- ✅ **Diagnosed the user's 8 real mat photos** (`tmp/realpictures/`, iPhone 15 Plus 1×) and their 3 UI runs this morning. Full numbers are in `docs/EVALUATION.md` (2026-11-03).
+  - The heart, the only flat part, is built live (SAM 3.1 + Spark, $0.044 for both live runs): 52.04 × 47.52 mm. Accuracy is 🟡 unverified (no caliper truth yet).
+  - Spark's claim of a break, prompted by an unrelated black shard on the mat, was rejected by verification, so nothing was invented.
+  - The vial is refused `FAMILY_UNSUPPORTED` and the caliper `TRACE_PARTIAL`, both correctly.
+  - Calibration on the real print: 0.19–0.24 mm RMS. That is paper flatness, not the lens (a radial term doesn't help). In-photo bar check: X +0.01/+0.04 mm, Y +0.36/+0.44 mm over 100 mm.
+- ✅ **`CAL_MAT_NOT_FLAT`:** markers that are found but disagree now say so, with the size of the disagreement and a hint to lay the mat on a hard table. Before, the error read "only 3 consistent markers remain". `CAL_MARKERS_REJECTED` names the offset too. Tested on a synthetic wavy sheet (1.5 mm amplitude, λ 100 mm).
+- ✅ **The API keeps `request.json` and `error.json` in every job folder** (never served), and error responses carry the `job_id`, which the UI shows. This morning's failures could only be reconstructed from the ledger.
+- ✅ **The geometric rule's reason now matches what it did.** It used to describe a chosen axis even when it chose none.
+- 147 offline tests pass (5 new); ruff is clean; the frontend is rebuilt.
+- ✅ **Second series** (`tmp/realphotos.2/`: mat flat on a table, shot from above). 12 of 12 markers on every photo, perspective ratio ≤ 1.04, fit RMS 0.19–0.25 mm.
+  - Live: the heart is built; the vial, cone and key are refused `FAMILY_UNSUPPORTED`; the caliper `TRACE_PARTIAL`. Spend $0.079.
+  - The classical fallback traces the heart's cast shadow (+4.4 mm in height); SAM doesn't.
+- 🟡 **AT-3 partly met** (`docs/EVALUATION.md`, 2026-11-03 §4). Caliper: height 45.14 mm, width 53 mm (no decimals).
+  - ✅ Height: photos 45.55 / 45.45 (+0.41 / +0.31 mm).
+  - ❌ Width: photos 52.07 / 51.84 (about −1 mm), yet no direction of the traced heart reaches 53 mm. The width reading is to be repeated.
+  - Print scale checked on the A4 sheet's own edges (210.4–210.6 × 296.6–296.9 mm): 100 % within 0.3 %. The user's bar readings ("50") are not used.
+- ✅ **A negative edge spread** (−0.37 mm on textured metal) is now reported as unmeasured. +1 test; 148 pass.
+- Two explanatory images for the user in `tmp/`:
+  - `barres_a_mesurer.jpg`: where the 100 mm bars are;
+  - `coeur_a_mesurer.jpg`: what to measure on the heart.
+
+**Next**
+- **The user:** caliper readings to 0.01 mm of the heart's full width and its height, and of both 100 mm bars.
+- **D5:** the Confidence Engine and the export gate.
+
+## 2026-11-03 (Tue, afternoon): Session 12, the finished product: UI redesign, Confidence Engine, delivery
+
+Brief: finish the product end to end, redesign the UI (light, simple by default, technical details on demand), test
+every path for real, and prepare the delivery. The reference `tmp/p3.txt` is the submission form; its fields are now
+`docs/SUBMISSION.md`.
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-11-03 afternoon entry)
+- ✅ **Background jobs with real progress** (`api/jobs.py`, `pipeline.py`).
+  - `POST /api/jobs` with `wait=false` answers at once; `GET /api/jobs/{id}` reports the pipeline's real stage events
+    with measured durations, then the result or a typed error.
+  - CPU stages run in a worker thread. Two jobs run at once, eight more may queue, then `SERVER_BUSY`.
+  - A job that was running when the server stopped reads back as `interrupted`.
+- ✅ **Confidence Engine (D5)** (`spec/confidence.py`).
+  - A modelled 2σ for every dimension: calibration (leave-one-out), print scale (checked only when both bars are
+    entered), edges, height correction, plus the mirror term for INFERRED geometry, including the source hole's own
+    error (the D5 item from Session 9).
+  - Hole parameters carry it into the `.scad` comments.
+  - Size is caliper-style: the sides of the smallest enclosing rectangle, whatever the part's orientation.
+  - Labelled "estimated" everywhere: coverage holds on 2 of 4 real comparisons, and the 2 misses are the suspect width.
+- ✅ **Export gate (UI):** uncertain items must be acknowledged before the STL and SCAD links unlock. 🟡 It is UI-level:
+  the server doesn't stamp the acceptance into the files.
+- ✅ **Printer hole allowance:** `?hole_offset_mm=` on the model files. The server rebuilds from `spec.json`, every
+  semantic check runs again, and the model is re-validated.
+- ✅ **Examples:** three synthetic examples in `assets/samples/` (bracket, flange, link), labelled synthetic, with
+  their truth. `POST /api/jobs` accepts `sample=` and `from_job=` (re-run a stored photo, which is how "Run again
+  without AI" works).
+- ✅ **Axis correction:** when the AI's verified reading can't rebuild with its own axis, the geometric rule's axis gets
+  a second chance under the same checks (`AXIS_CORRECTED`). It was found live on the flange (Spark chose the crosswise
+  axis). ✅ tested offline (3 new tests); not yet observed live.
+- ✅ **New UI**, written from scratch (React, three.js, self-hosted Inter, no other new runtime dependency):
+  - **The pages:** home (hero, how it works, the evidence legend, runnable examples, scope), new repair (dropzone with
+    browser checks, a four-check photo guide, thickness, optional bar check, advanced AI options), progress (the real
+    stages), result (verdict, 3D view with evidence edges and dimensions, before/after slider, what we know, before you
+    print, files), technical details, my repairs (localStorage), and refusal and error screens with next actions.
+  - **The identity:** paper, ink and ember. Solid lines are measured, dashed ember lines are rebuilt.
+  - **The overlay:** the backend overlay now uses the same colours and hatches the rebuilt material.
+- ✅ **Wording:** a hole doubt no longer says "confirm to include", an action that doesn't exist.
+- ✅ **Tests:**
+  - 170 offline (22 new; one older test rewritten for the new axis policy); ruff clean; the frontend builds.
+  - In headless Chromium: every screen at 3 widths, with no overflow and no console errors; live AI runs; an outage
+    and the no-AI re-run; invalid files; refusals.
+  - axe-core: 0 violations.
+- ✅ **Exports, checked by OpenSCAD itself** (`backend/tools/check_exports.py`, `tools/scad-check`): 5 cases compiled
+  to the same solid as the STL (volume within 4 × 10⁻⁶, genus = holes).
+- ✅ **Delivery:**
+  - The README, rewritten with screenshots.
+  - `docs/SUBMISSION.md`: every form field, with drafts from measured facts.
+  - `docs/DEMO_SCRIPT.md`: the 3-minute shot list.
+  - `Dockerfile`: built and run-checked; runs as non-root, with no secret in the image.
+  - `.env.example` gains the server settings; the third-party notices are regenerated.
+- **Spend today:** $0.34 on the app's ledger, all time $1.22 of $150. Add a few cents for the live test suite
+  (`pytest -m live`, 3 tests), which keeps its own ledger in a temporary folder.
+
+**Open**
+- 🟡 **AT-3 width:** the heart's width reading is still to be repeated to 0.01 mm; no real part with holes yet.
+- 🟡 Real devices: Safari, iOS and Android, and screen readers, are untested. Only Chromium's emulation was used.
+- 📋 Caliper overrides of single dimensions in the UI; job retention or cleanup; HEIC decoding.
+
+**Next**
+- **The user:** push, make the repository public, record the video (`docs/DEMO_SCRIPT.md`) with a real unbranded part
+  if possible, and fill the form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.

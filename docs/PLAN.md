@@ -524,6 +524,11 @@ If we're behind schedule at G3, M3 is dropped and D8 becomes buffer.
 
 ### 6.6 Confidence engine: statuses and a defensible uncertainty
 
+> **Status (2026-11-03):** ✅ implemented (`backend/reforge/spec/confidence.py`). A modelled 2σ for every dimension; INFERRED holes add their source hole's error.
+> - The UI export gate covers UNCERTAIN items (🟡 UI-level: the acceptance is not stamped into the files).
+> - Multi-photo fusion: 📋.
+> - Coverage: 🟡 one real part (`docs/EVALUATION.md`).
+
 | Status | Meaning | Uncertainty shown |
 |---|---|---|
 | **MEASURED** | A user caliper value, or a user-confirmed calibration | Instrument and reading error (default ±0.05 mm, user-editable) |
@@ -704,7 +709,7 @@ reforge/
 
 **Across all steps:**
 - **Progress:** a stage stepper driven by **real** SSE events with measured durations. No simulated progress.
-- **Look:** a dark engineering workspace, monospace numerics, a restrained palette.
+- **Look:** ~~a dark engineering workspace~~. Revised 2026-11-03: a light, minimal identity (paper, ink, ember) whose visual language is the evidence language itself: solid = measured, dashed ember = rebuilt, dotted red = uncertain. Simple by default; the technical details sit behind one toggle.
 - **"Try a sample":** bundled real photo sets let judges run the real pipeline without printing a mat.
 
 ---
@@ -774,6 +779,22 @@ Without a printer, that's stated rather than implied.
 ---
 
 ## 10. Milestone 1: first end-to-end vertical slice (target Wed 28 Oct)
+
+> **Status (2026-11-03, afternoon): the product is finished for submission** (`docs/PROGRESS.md`, Session 12; `docs/EVALUATION.md`, 2026-11-03 afternoon).
+> - ✅ Background jobs with real stage progress; Confidence Engine (a modelled 2σ for every dimension); UI export gate; printer hole allowance; three labelled synthetic examples; re-run without AI; the geometric axis correction.
+> - ✅ New UI, light and simple by default, with the technical details on demand. Tested in headless Chromium at 3 widths, with 0 axe-core violations.
+> - ✅ The exported `.scad` compiles in OpenSCAD to the same solid as the STL. The Docker image builds and runs.
+> - 🟡 The ±U coverage is checked on one real part only (2 of 4 inside; the 2 misses are the suspect width reading).
+
+> **Status (2026-11-03, morning):** first real photos of the printed mat (iPhone 15 Plus, 1×; `docs/EVALUATION.md`, 2026-11-03).
+> - ✅ A real flat part (a stamped metal heart) is built end to end through SAM 3.1 + Spark: 52.04 × 47.52 mm. Its accuracy is 🟡 unverified until the caliper reading (AT-3).
+> - ✅ Out-of-scope objects are refused with the right reason: a glass vial (`FAMILY_UNSUPPORTED`) and a multi-coloured caliper (`TRACE_PARTIAL`). A mat lying on a binder gives the new `CAL_MAT_NOT_FLAT`.
+> - 🟡 The real marker fit is 0.19–0.24 mm RMS on near top-down photos, against 0.006 mm on composites. The cause is paper flatness, not the lens. The printed Y bar reads +0.4 % in the photos.
+> - 🟡 **AT-3 partly met** (second series, mat flat on a table, 12/12 markers):
+>   - height 45.55 / 45.45 mm against a caliper reading of 45.14 (✅ within ±0.5);
+>   - width 52.07 / 51.84 against 53 (❌ about −1 mm; a whole-mm reading larger than any extent of the traced part, to be repeated).
+> - The print is at 100 % within 0.3 %, measured from the A4 sheet's own edges.
+> - ⏳ AT-3: repeat the width reading to 0.01 mm; a part with holes for Ø.
 
 > **Status (2026-11-02, evening):**
 > - ✅ A 20-photo test set for the app (`backend/tools/make_test_photos.py`): stock photos of real parts and rendered plastic parts, composited onto the mat at known sizes. These are SYNTHETIC COMPOSITES, not real photos.

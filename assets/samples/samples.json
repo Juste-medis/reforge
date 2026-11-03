@@ -1,0 +1,79 @@
+[
+  {
+    "id": "broken-bracket",
+    "title": "Broken mounting bracket",
+    "story": "One end snapped off. The intact end and the second hole survive, so the mirror has evidence to use.",
+    "thickness_mm": 3.0,
+    "truth": {
+      "basis": "the intact part, as rendered",
+      "length_mm": 80.0,
+      "width_mm": 28.0,
+      "holes": [
+        {
+          "diameter_mm": 4.2,
+          "count": 2
+        }
+      ],
+      "photographed": "77.6 mm long: 2.4 mm of the end is missing"
+    },
+    "file": "broken-bracket.jpg",
+    "thumb": "broken-bracket.thumb.jpg",
+    "kind": "synthetic",
+    "label": "SYNTHETIC EXAMPLE: a rendered plastic part on a rendered Re-Forge mat, shot by a simulated phone camera (RE-FORGE tools/make_test_photos.py). Not a real photo."
+  },
+  {
+    "id": "broken-flange",
+    "title": "Broken square flange",
+    "story": "A quarter of the flange is gone, and two of its four bolt holes with it.",
+    "thickness_mm": 3.0,
+    "truth": {
+      "basis": "the intact part, as rendered",
+      "length_mm": 50.0,
+      "width_mm": 50.0,
+      "holes": [
+        {
+          "diameter_mm": 22.0,
+          "count": 1
+        },
+        {
+          "diameter_mm": 5.5,
+          "count": 4
+        }
+      ],
+      "photographed": "40.4 mm wide: two \u00d85.5 holes were lost in the break"
+    },
+    "file": "broken-flange.jpg",
+    "thumb": "broken-flange.thumb.jpg",
+    "kind": "synthetic",
+    "label": "SYNTHETIC EXAMPLE: a rendered plastic part on a rendered Re-Forge mat, shot by a simulated phone camera (RE-FORGE tools/make_test_photos.py). Not a real photo."
+  },
+  {
+    "id": "slotted-link",
+    "title": "Slotted link, intact",
+    "story": "An intact part placed at an angle: nothing to rebuild, measured as photographed.",
+    "thickness_mm": 4.0,
+    "truth": {
+      "basis": "the part, as rendered",
+      "length_mm": 70.0,
+      "width_mm": 18.0,
+      "holes": [
+        {
+          "diameter_mm": 6.0,
+          "count": 2
+        },
+        {
+          "slot_mm": [
+            20.0,
+            6.0
+          ],
+          "count": 1
+        }
+      ],
+      "photographed": "placed at 30\u00b0 to the mat"
+    },
+    "file": "slotted-link.jpg",
+    "thumb": "slotted-link.thumb.jpg",
+    "kind": "synthetic",
+    "label": "SYNTHETIC EXAMPLE: a rendered plastic part on a rendered Re-Forge mat, shot by a simulated phone camera (RE-FORGE tools/make_test_photos.py). Not a real photo."
+  }
+]

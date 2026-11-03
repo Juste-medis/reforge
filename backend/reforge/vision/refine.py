@@ -67,10 +67,10 @@ class HoleCandidate:
     def doubt(self) -> str | None:
         """Why this candidate may not be a through-hole, or None."""
         if self.glare_suspect:
-            return "brighter than the mat paper: possibly glare, not a hole; confirm to include"
+            return "brighter than the mat paper: possibly glare, not a hole, so it was left out of the model"
         if self.paper_delta_e > HOLE_MAX_PAPER_DELTA_E and self.compactness < HOLE_MIN_COMPACTNESS:
             return (f"doesn't look like the mat paper seen through the part (ΔE {self.paper_delta_e:.0f}) and isn't "
-                    "round: possibly a reflection or a mark, not a hole; confirm to include")
+                    "round: possibly a reflection or a mark, not a hole, so it was left out of the model")
         return None
 
 
@@ -301,4 +301,8 @@ def _edge_sigma_mm(t: np.ndarray, contours: list[np.ndarray], px_per_mm: float) 
         if 3 * sigma_px <= half_width:
             break
         half_width = 3.5 * sigma_px
+    if sigma_px <= 0:
+        # Texture swamps the edge: on a real stamped-metal part (2026-11-03) the plateau variance made the sum
+        # negative (-0.37 mm). A spread can't be negative, so it's reported as unmeasured rather than as a number.
+        return None
     return sigma_px / px_per_mm

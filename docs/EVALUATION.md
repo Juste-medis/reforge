@@ -434,3 +434,223 @@ Six offline tests cover these: a streak doubted, holes left out, the side-broken
 - **The flange's inferred hole centres are 0.058 mm off, against a mirror-only 2σ of 0.031 mm.** That U leaves out the source hole's own error; 📋 the Confidence Engine (D5) adds it.
 - **The composites prove the pipeline on real textures, not on real photos:** no shadows, no phone processing. AT-3 is still needed.
 - **Spark's family verdict varies between runs on borderline (metal) parts.** No accuracy rate is claimed.
+
+## 2026-11-03 · First real photos of the printed mat · REAL PHOTOS, classical + rule offline, plus live SAM 3.1 + Muse Spark on two
+
+**Conditions**
+- **Phone:** iPhone 15 Plus, main camera, 1× (26 mm equivalent), f/1.6, 5712 × 4284 px.
+- **Setting:** indoor office light, hand-held. The user's own photos, in gitignored `tmp/realpictures/`.
+- **Mat:** A4 v1, printed by the user. Print scale is **unverified**: the two 100 mm bars have not been calipered yet.
+- **Code:** as of this entry.
+
+**Objects** (8 photos)
+- a glass perfume vial, 3 photos (1058–1060)
+- a stamped metal heart, about 52 × 48 mm, with a black plastic shard beside it (1061)
+- a small screwdriver (1062)
+- a digital caliper, 3 photos (1063–1065)
+
+Only the heart is in scope: a flat part of roughly uniform thickness.
+
+### 1. Calibration on a real print
+
+| photo | markers used / found | fit RMS (mm) | leave-one-out RMS (mm) | px/mm | outcome |
+|---|---|---|---|---|---|
+| 1058 vial, near top-down | 11 / 12 (marker 0 rejected) | 0.191 | 0.283 | 16.9 | calibrated |
+| 1059 vial, oblique | 10 / 10 | 0.283 | 0.369 | 15.0 | calibrated, `CAL_STRONG_TILT` 1.79 |
+| 1060 vial, oblique | 11 / 12 | 0.255 | 0.320 | 14.3 | calibrated, `CAL_STRONG_TILT` 1.88 |
+| 1061 heart, near top-down | 11 / 12 (marker 0 rejected) | 0.238 | 0.352 | 17.3 | calibrated |
+| 1062 screwdriver, mat on a binder | 3 / 11 agree | — | — | — | refused, `CAL_MAT_NOT_FLAT` (markers off a flat sheet by up to 1.6 mm) |
+| 1063 caliper | 8 / 12 | 0.436 | 0.876 | 16.8 | calibrated |
+| 1064 caliper, very oblique, mat on a binder | 3 / 7 agree | — | — | — | refused, `CAL_MAT_NOT_FLAT` (up to 1.5 mm) |
+| 1065 caliper | 5 / 6 | 0.251 | 0.866 | 17.0 | calibrated, markers clustered |
+
+- **The real fit residual is 30–70× the synthetic one** (0.006–0.007 mm on composites). It is above the 0.15 mm warning on every photo.
+- **Not lens distortion.** Adding a radial k1, k2 term to the fit leaves the RMS almost unchanged: 0.312 → 0.310 mm on 1058, 0.329 → 0.305 mm on 1061.
+- **The paper isn't flat.**
+  - Marker 0, at the top-left corner, is off by about 0.5 mm in the same direction on 1058 and 1061, and its own corners disagree by 0.4 mm. That is a lifted corner.
+  - On a binder the markers are off by up to 1.6 mm.
+- **In-photo check of the printed 100 mm bars.** Tick centres were located in each calibrated photo. Bars and markers share the print, so this tests the fit's local consistency, not the print scale.
+  - On the two near top-down photos the X bar reads 100.042 and 100.007 mm.
+  - The Y bar reads 100.443 and 100.355 mm: **about +0.4 %, the same on both photos**. That is systematic, consistent with a non-uniform paper feed or a bow. Which one is unconfirmed: the caliper reading of the Y bar would tell.
+  - On the oblique photos the X bar reads +0.55 to +0.58 mm.
+
+### 2. Outcomes
+
+- **Offline, $0** (classical segmentation and geometric rule, not AI)
+  - **Vial ×3:** a model is built. The classical path has no family check.
+  - **Heart:** 52.81 × 47.52 mm, no holes.
+  - **Caliper ×2:** refused, `TRACE_PARTIAL` (9 % and 2 %). It is a multi-coloured object.
+  - **1062 and 1064:** refused at calibration, as above.
+- **Live, $0.044** (SAM 3.1 + Muse Spark 1.3, standard tier)
+  - **Heart:** built, 52.04 × 47.52 × 1.5 mm. SAM confidence 0.992.
+    - Spark called it a "heart-shaped souvenir plaque" (`extruded_profile`) and claimed a break. Its evidence was "a separate black shard on the mat", which is an unrelated fragment.
+    - Verification rejected all four fracture picks as smooth (fit residual 0.019–0.055 mm, `FRACTURE_SMOOTH`), so nothing was rebuilt.
+    - No candidate axis reached the 0.6 support needed to be shown. The best near-vertical axis has 0.60 on the classical trace: a real stamped heart isn't mirror-symmetric to 0.3 mm.
+  - **Vial:** refused, `FAMILY_UNSUPPORTED`. Spark: "glass perfume spray vial (revolved): 3D cylinder not flat plate; trace is label portion only".
+- **The two heart outlines differ by up to 0.77 mm, along the left half only** (p50 0.11 mm). That side shows the part's side wall and a soft shadow. Which trace is right is **unverified until the caliper reading**.
+- **The user's UI runs this morning**, reconstructed from the job folders and the ledger:
+  - vial, classical: model built;
+  - vial, SAM + Spark: `FAMILY_UNSUPPORTED`;
+  - caliper, classical: `TRACE_PARTIAL`.
+  - Failed jobs left no trace of their error. They now do (`error.json`, `request.json`).
+
+### 3. Second series, same day: mat flat on a table, shot from above (`tmp/realphotos.2/`, 5 photos)
+
+**Calibration**
+- 12 of 12 markers on all five photos, perspective ratio 1.01–1.04.
+- Fit RMS 0.190–0.254 mm, still above the 0.15 mm warning. On a flat table, shot from above, this residual is not a tilt effect.
+- Bar check: X +0.16 to +0.34 mm, Y +0.13 to +0.21 mm over 100 mm.
+- On all 11 calibrated photos of both series, every bar reads long: +0.01 to +0.58 mm, mean about +0.25 mm. A sheet bowed up by about 0.5 mm inside the marker ring would do that (magnification 245/244.5 at this camera height). Unconfirmed.
+
+**Live, $0.079 for 11 calls**, including one SAM re-run of photo 1061 at 2 mm (SAM 3.1 + Muse Spark 1.3, standard tier)
+- **Heart** (2.0 mm, the user's caliper): built, SAM confidence 0.992.
+  - Spark called it a "heart-shaped Disneyland tag" broken at S18, "attachment point broken away". S18 is the burr on the left lobe, which the geometry also calls irregular. A missing hanging loop is plausible, but unverified.
+  - Spark called the heart mirror-symmetric, but offered no axis. None was offered: the best support is ≤ 0.52, because this stylised heart's tip sits off-centre. The result is `AXIS_MISSING` and a build as photographed.
+- **Vial:** `FAMILY_UNSUPPORTED` (revolved).
+- **Cone:** `FAMILY_UNSUPPORTED`, "tapered metal ferrule".
+- **Key:** `FAMILY_UNSUPPORTED`, "EMKA small metal key … milled groove and cut teeth".
+- **Caliper:** `TRACE_PARTIAL` (1 %).
+- A first attempt on the key stopped with `META_ERROR` after 17 ms. The test script, not the app, reused one API client across two event loops; the rerun alone succeeded.
+
+**Classical fallback (not AI) on the heart (1066):** the cast shadow below the tip is traced as part, making the heart 4.4 mm too tall. SAM follows the metal edge.
+
+### 4. Against the caliper (AT-3, the user's readings)
+
+Photo values simulate the caliper on the traced outline. For the height, one jaw rests on both lobe tops (the convex-hull edge over the notch) and the other on the tip. The width is measured across the lobes, perpendicular to that edge.
+
+| | caliper | photo 1061 (SAM) | photo 1066 (SAM) | photo − caliper |
+|---|---|---|---|---|
+| height, tip to lobe tops | **45.14** (first given as 46) | 45.55 | 45.45 | **+0.41 / +0.31** |
+| width across the lobes | **53** (no decimals; first given as 25) | 52.07 | 51.84 | **−0.93 / −1.16** |
+| thickness | 2 | entered | entered | — |
+
+**Repeatability and sensitivity**
+- The two photos agree to 0.10 mm on height and 0.23 mm on width.
+- Turning the jaws ±5° changes the height by up to 1.7 mm (the tip is off-centre), the width by 0.25 mm or less.
+
+**Checks on the photo side** (1066)
+- **Print scale, from the sheet itself.** Through the marker calibration, the A4 sheet's edges against the yellow table measure 210.41–210.58 × 296.60–296.88 mm on the five photos of the second series (1066's top edge was too poorly visible and is excluded). That is 210 × 297 within 0.3 %: the mat is printed at 100 %. The user's bar readings ("50 and 50") cannot be tick-to-tick lengths and are not used.
+- **Edges at the width contacts.** At 60 px/mm, the traced edge sits on the metal edge on the left (0.04 mm) and 0.23 mm outside it on the right, in a shadow. That makes the width read larger, not smaller.
+- **The burr isn't behind the height difference.** Smoothing it out changes the simulated height by 0.04 mm.
+- **No direction is 53 mm wide.** The traced heart's largest extent in any direction is 52.10 mm (1066) and 52.51 mm (1061). A caliper cannot read more than that on a flat part.
+
+**Verdict: AT-3 partly met.**
+- ✅ Height is within the ±0.5 mm target on both photos.
+- ❌ Width misses it by about 1 mm against a whole-mm reading. The miss has the opposite sign to the height error. An isotropic cause (print scale, height correction) cannot do that, and the sheet check rules out an anisotropic print. The width reading is therefore the first suspect and is to be repeated to 0.01 mm. If it stands, the photo under-reads this part's width by about 2 %, for an unexplained reason.
+
+### 5. Not yet measured
+
+- **AT-3 width:** three caliper readings of the heart's full width, to 0.01 mm.
+- **Why every bar reads long in the photos.**
+- **A part with holes** (hole Ø, the other half of AT-3).
+- **Edge spread on textured metal:** the estimator went negative (−0.37 mm on 1066). It is now reported as unmeasured; it only affects the hole-curvature correction.
+
+## 2026-11-03 (afternoon) · The finished product, tested end to end · SYNTHETIC examples and REAL photos, live SAM 3.1 + Muse Spark 1.3 (standard tier, effort low)
+
+Conditions: the new UI (production build) served by the API on the VPS, driven by headless Chromium 156 (Playwright
+driver, a verification tool outside the repo). Desktop 1440 × 900, tablet 834 × 1112, phone 390 × 844 and 360 × 800
+emulated. Live AI calls on the project key; the costs below are the ledger's.
+
+### 1. Live runs through the API and the UI
+
+The three bundled examples are SYNTHETIC: rendered parts on the rendered mat, shot by the test harness's camera, so
+their truth is exact. The other runs are the user's REAL photos (iPhone 15 Plus, `tmp/realphotos.2/`).
+
+| Input | Job | Outcome | Size (smallest rectangle) vs truth | Holes | Time / AI cost |
+|---|---|---|---|---|---|
+| broken-bracket (UI) | `ea5b7c44290f` | Rebuilt, 107 mm² mirrored | 80.03 × 28.04 vs 80 × 28 (intact) | 2 × Ø4.18 vs 4.2 | 31 s / $0.0175 |
+| broken-flange (API) | `b8dc78fe2e63` | **Not rebuilt**: see §2 | 50.01 × 40.42 (as photographed) | 3 observed | 40 s / $0.0231 |
+| broken-flange (API, after the §2 fix) | `deecc951a3e2`, `9eda9a779a4d` | Rebuilt, 536 mm² | 50.02 × 50.02 vs 50 × 50 (intact) | 3 observed + 2 inferred Ø5.495, 5.497 vs 5.5 | $0.018–0.019 each |
+| slotted-link (API) | `f0978dc3f9a0` | Measured, nothing to rebuild | 70.01 × 18.02 vs 70 × 18, placed at 30° | 2 × Ø5.99 vs 6, slot traced | 24 s / $0.016 |
+| REAL heart, IMG_1066 (UI upload) | `86e2d4b54954` | Built as photographed; 2 doubtful holes left out, export gated | 48.95 × 43.50 ±0.84 (smallest rectangle, so diagonal on a heart) | — | 39 s in the browser |
+| REAL ferrule, IMG_1068 (UI upload) | `922cdd703c96` | Refused `FAMILY_UNSUPPORTED`: "3D tapered metal ferrule, not flat uniform plate" | — | — | 37 s in the browser |
+| REAL photo without the mat, IMG_1050 (UI upload) | `3306d5df6176` | Refused `CAL_MARKERS_INSUFFICIENT` before any AI call | — | — | 3.9 s, $0 |
+
+- **Stage timings** (bracket): the SAM 3.1 segment took 4.7 s and Muse Spark's reading 23 s, out of 31 s.
+- **Ledger, all time:** median latency 3.0 s for SAM 3.1 (74 calls) and 12.6 s for Muse Spark (62 calls, p90 21.4 s).
+  All 62 Spark answers parsed against the strict schema.
+
+### 2. A real failure of the AI's axis choice, and the fix
+
+On `b8dc78fe2e63`, Muse Spark found the break correctly (S0–S7, the jagged right edge) but chose axis A0.
+- **Why A0 couldn't work:** A0 is the flange's top-bottom mirror, a real symmetry of the part, but it maps the break
+  onto itself.
+- **What verification did:** it rejected all eight fracture picks (`FRACTURE_MATCHES_MIRROR`, 65–97 % of each edge
+  matched its own mirror image), so nothing was rebuilt and nothing was invented.
+- **The axis that would work:** A2, the vertical axis through the bore, passed every check in the trial rebuild.
+
+**Fix** (`reasoning/reconstruct.py`):
+- **When it applies:** the AI calls the part broken and names its fractures, but its axis yields no rebuild.
+- **What happens:** the geometric rule's axis gets a second chance. It must pass the same checks, with the AI's own
+  fracture picks re-verified under it.
+- **How it is reported:** an `AXIS_CORRECTED` note. The AI's analysis is kept as it answered.
+- **Tests:**
+  - a test interpreter choosing the crosswise axis reproduces this run;
+  - another one chooses a diagonal axis (`AXIS_PARTIAL`);
+  - both end rebuilt with the two lost holes at Ø 5.5 ± 0.05;
+  - a third test checks that geometry never rebuilds a part the reading calls intact.
+
+The two later live runs didn't exercise the fix: Spark chose A2 itself both times. So the fix is **✅ tested offline**
+on this exact case, and **not yet observed live**.
+
+### 3. The Confidence Engine (D5) against known truths
+
+A 2σ estimate per dimension, from the photo's error budget (`spec/confidence.py`: calibration leave-one-out RMS, print
+scale, edges, height correction; a mirror term for INFERRED geometry).
+
+| Case | Dimension | Error | ±U (2σ) | Inside? |
+|---|---|---|---|---|
+| synthetic bracket | length, width | +0.03, +0.04 | 0.42, 0.20 | yes, yes |
+| synthetic bracket | holes Ø | −0.02, −0.02 | 0.12 | yes |
+| synthetic flange (rebuilt) | inferred holes Ø | −0.005, −0.003 | 0.12 | yes |
+| REAL heart, IMG_1066's budget | height 45.14 (caliper) | +0.31 (1066), +0.41 (1061) | 0.83 | yes, yes |
+| REAL heart, IMG_1066's budget | width 53 (caliper, no decimals) | −1.16 (1066), −0.93 (1061) | 0.84 | **no, no** |
+
+- **On synthetic images the check is weak.** The rendered mat has an exact scale, so the assumed ±0.5 % print-scale
+  term dominates U.
+- **On the real part:** 2 of 4 comparisons fall inside. The 2 outside are the width whose caliper reading is suspect
+  (§4 of the morning entry).
+- **Coverage is not established yet.** Every surface calls these values estimates.
+
+### 4. The exports, checked by OpenSCAD itself
+
+`backend/tools/check_exports.py`: OpenSCAD's WASM build (`openscad-wasm-prebuilt` 1.2.0) compiles each job's
+`model.scad`, and the result is compared with `model.stl`.
+
+| Job | Holes | OpenSCAD | Watertight | Volume (STL / SCAD) | Rel. diff | Bounds | Genus |
+|---|---|---|---|---|---|---|---|
+| bracket `ea5b7c44290f` | 2 | 4.1 s, no warnings | yes / yes | 6602.875 / 6602.875 mm³ | 5 × 10⁻⁸ | identical | 2 / 2 |
+| flange `deecc951a3e2` | 5 (2 inferred) | 10.6 s | yes / yes | 5983.129 / 5983.125 | 7 × 10⁻⁷ | identical | 5 / 5 |
+| link `f0978dc3f9a0` | 3 (1 slot) | 6.7 s | yes / yes | 4089.279 / 4089.278 | 4 × 10⁻⁷ | identical | 3 / 3 |
+| REAL heart `86e2d4b54954` | 0 | 0.2 s | yes / yes | 3273.388 / 3273.388 | 5 × 10⁻⁸ | identical | 0 / 0 |
+| flange, holes +0.2 mm (served by the API) | 5 | — | yes / yes | 5941.237 / 5941.259 | 4 × 10⁻⁶ | — | 5 / 5 |
+
+### 5. The UI in a real browser (headless Chromium)
+
+| Check | Result |
+|---|---|
+| Home, new repair and my repairs at 1440, 834 and 390 px | no console errors, no horizontal overflow (after fixing a hero background and a table) |
+| Result page at 390 and 360 px | no page overflow; the wide tables scroll inside their cards |
+| An example run from the home page, with AI | real stage list; the result renders the 3D view, the before/after slider, the evidence and the downloads; known-answer card: "within ±U: yes" |
+| Upload of a real photo, with AI | client checks (format, 4284 × 5712 px), then live stages, then the result; the uncertain items lock the downloads until acknowledged |
+| Meta API unreachable (a server pointed at a closed port) | "The AI service didn't answer"; "Run again without AI" re-runs the stored photo, rebuilt, labelled `classical-fallback` |
+| A shell script named `.jpg`; a HEIC file; an empty form | blocked in the browser with the reason; nothing is sent |
+| Out-of-scope object; photo without the mat | refusal screens with the reason and what to do |
+| Accessibility audit, axe-core 4.14.0 (WCAG 2 A/AA, 2.1 AA, best practice): home, new repair, my repairs, a result with its technical details, a refusal | 0 violations on every screen (30–49 rules passed per screen), colour contrast included |
+| Content-Security-Policy | blocks injected inline scripts: the audit had to bypass it to run |
+| A job saved before today (no uncertainty in its report) | an "older version" screen instead of a crash |
+| Offline suite / live suite | 170 passed / 3 passed (`pytest -m live`: SAM 3.1 and Muse Spark on the new pipeline) |
+
+### 6. Deployment recipe
+
+- **Build:** `docker build` of the new `Dockerfile` succeeds; the image is 1.75 GB.
+- **Run:** `docker run -p 127.0.0.1:8013:8000` with no key serves the UI (200) and `/api/health`. It runs a no-AI job on
+  the slotted-link example: valid, 70.009 × 18.018 mm, identical to the local run.
+- **Image hygiene:** it runs as uid 10001 and contains no `.env`.
+
+### 7. Not measured
+
+- Real phones and tablets: only Chromium's mobile emulation was used; Safari and iOS were not tested.
+- Screen readers: not tested with one. The automated audit above checks labels, roles and contrast, not the experience.
+- WebGL on real GPUs: headless Chromium rendered with SwiftShader.
+- Coverage of ±U on more real parts, and hole diameters on a real part (no real part with holes yet).

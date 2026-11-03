@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     reforge_daily_budget_usd: float = 5.0
     reforge_data_dir: Path = REPO_ROOT / "data"
     reforge_request_timeout_s: float = 90.0
+    # Web server. 127.0.0.1 keeps it local; a container or a reverse proxy sets 0.0.0.0.
+    reforge_host: str = "127.0.0.1"
+    reforge_port: int = 8000
+    reforge_max_running_jobs: int = 2
+    reforge_max_queued_jobs: int = 8
 
 
 @lru_cache(maxsize=1)

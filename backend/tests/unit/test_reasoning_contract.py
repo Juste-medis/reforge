@@ -129,3 +129,23 @@ def test_weak_axis_is_rejected_and_unpicked_fracture_reported(broken) -> None:
     assert result.axis is None
     codes = {n.code for n in result.notes}
     assert "AXIS_WEAK" in codes and "FRACTURE_UNPICKED" in codes
+
+
+@pytest.mark.parametrize(("kinds", "axes", "expected"), [
+    ({"S0": "line", "S1": "arc"}, [], "nothing to rebuild"),
+    ({"S0": "irregular", "S1": "arc"}, [], "built as photographed"),
+    ({"S0": "irregular", "S1": "arc"}, [{"id": "A0", "support": 0.95, "holes_matched": 0, "holes_contradicting": 0,
+                                         "mirror_would_add_mm2": 40.0}], "trial rebuild"),
+])
+def test_geometric_rule_says_why_it_rebuilds_nothing(kinds, axes, expected) -> None:
+    """The rule's reason must describe what it did: it used to describe a chosen axis even when it chose none."""
+    import asyncio
+
+    from reforge.reasoning.interpret import GeometricInterpreter, InterpretationRequest
+
+    blank = np.zeros((8, 8, 3), np.uint8)
+    request = InterpretationRequest(blank, blank, {"mirror_axes": axes}, list(kinds), [a["id"] for a in axes], [],
+                                    kinds, {a["id"]: False for a in axes})
+    analysis = asyncio.run(GeometricInterpreter().interpret(request)).analysis
+    assert analysis.mirror_axis_id == "none"
+    assert expected in analysis.symmetry_reason

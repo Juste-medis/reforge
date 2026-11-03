@@ -1,0 +1,10 @@
+{
+  "name": "reforge-scad-check",
+  "private": true,
+  "description": "Compiles Re-Forge's exported .scad files with OpenSCAD (WASM build) so they can be compared with the STL. A verification tool, not part of the app.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "openscad-wasm-prebuilt": "1.2.0"
+  }
+}

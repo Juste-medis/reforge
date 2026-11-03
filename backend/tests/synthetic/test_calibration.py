@@ -4,6 +4,7 @@ Pass condition from PLAN §10: scale error < 0.2 % across tilt 0–25°, noise, 
 occlusion; fewer than 4 markers raises CAL_MARKERS_INSUFFICIENT instead of crashing.
 """
 
+import cv2
 import numpy as np
 import pytest
 
@@ -83,6 +84,30 @@ def test_fewer_than_four_markers_is_a_typed_error() -> None:
         calibrate(image)
     assert info.value.code == "CAL_MARKERS_INSUFFICIENT"
     assert info.value.hint
+
+
+def test_bent_mat_is_reported_as_not_flat() -> None:
+    """A wavy sheet, as on a real print lying on a binder (2026-11-03: markers off a flat sheet by up to 1.6 mm, only
+    3 of 11 agreeing). Here each mat point appears moved by 1.5 mm x (sin 2πy/λ, sin 2πx/λ), λ = 100 mm: the markers
+    are bent too, not just shifted, so no flat-sheet fit holds four of them."""
+    layout = mat_layout("A4")
+    camera = make_camera(layout)
+    flat = render_view(layout, camera, blur_sigma=0.6)
+    h, w = flat.shape[:2]
+    u, v = np.meshgrid(np.arange(w, dtype=np.float64), np.arange(h, dtype=np.float64))
+    seen_mm = cv2.perspectiveTransform(np.stack([u, v], -1).reshape(-1, 1, 2),
+                                       np.linalg.inv(camera.plane_to_image)).reshape(h, w, 2)
+    amp_mm, wavelength_mm = 1.5, 100.0
+    shift = amp_mm * np.sin(2 * np.pi * seen_mm[..., ::-1] / wavelength_mm)
+    source_px = cv2.perspectiveTransform((seen_mm - shift).reshape(-1, 1, 2), camera.plane_to_image)
+    source_px = source_px.reshape(h, w, 2).astype(np.float32)
+    bent = cv2.remap(flat, source_px[..., 0], source_px[..., 1], cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    with pytest.raises(ReforgeError) as info:
+        calibrate(bent)
+    assert info.value.code == "CAL_MAT_NOT_FLAT"
+    assert "isn't lying flat" in info.value.message and "flat on a hard table" in info.value.hint
+    off_mm = float(info.value.message.split("by up to ")[1].split(" mm")[0])
+    assert 1.0 <= off_mm <= 2.5
 
 
 def test_no_mat_in_image_is_a_typed_error() -> None:

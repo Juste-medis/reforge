@@ -154,3 +154,20 @@ def test_empty_mask_is_a_typed_error() -> None:
     with pytest.raises(ReforgeError) as info:
         refine_profile(view, np.zeros(view.image.shape[:2], np.uint8))
     assert info.value.code == "PROFILE_EMPTY_MASK"
+
+
+def test_edge_spread_is_measured_on_a_blurred_edge_and_left_unmeasured_on_texture() -> None:
+    """∫ t(1 - t) dn = σ/√π on a blurred step. On a textured part the plateau variance can drive the sum negative
+    (a real stamped-metal heart gave -0.37 mm, 2026-11-03): that is reported as unmeasured, not as a spread."""
+    from scipy.special import ndtr
+
+    from reforge.vision.refine import _edge_sigma_mm
+
+    px_per_mm, sigma_px, radius_px = 10.0, 2.0, 80.0
+    yy, xx = np.mgrid[0:300, 0:300].astype(np.float32)
+    t = ndtr((radius_px - np.hypot(xx - 150, yy - 150)) / sigma_px).astype(np.float32)
+    angles = np.linspace(0, 2 * np.pi, 400, endpoint=False)
+    contour = [np.column_stack([150 + radius_px * np.cos(angles), 150 + radius_px * np.sin(angles)])]
+    assert _edge_sigma_mm(t, contour, px_per_mm) == pytest.approx(sigma_px / px_per_mm, rel=0.1)
+    textured = t + np.random.default_rng(0).normal(0, 0.6, t.shape).astype(np.float32)
+    assert _edge_sigma_mm(textured, contour, px_per_mm) is None

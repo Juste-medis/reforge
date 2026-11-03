@@ -1,14 +1,19 @@
-"""M1 pipeline: photo → calibration → segmentation → refined profile → height correction → PartSpec → solid → STL.
+"""The pipeline: photo → calibration → segmentation → refined profile → height correction → interpretation and mirror
+reconstruction → PartSpec → solid → STL, OpenSCAD and report.
 
-Every stage is timed for real and every measured quantity is reported with its evidence.
-Reconstruction of missing geometry (symmetry) comes in M2. M1 builds exactly what was observed: the photographed
-silhouette, corrected for the part's own height (its top face is closer to the camera than the mat).
+Every stage is timed for real, and reported as it starts and ends through ``progress`` (the UI's stage list shows
+exactly these events, never a simulated progress). Every measured quantity is reported with its evidence and, from
+the Confidence Engine (``reforge.spec.confidence``), a modelled 2σ uncertainty.
+
+CPU-heavy stages run in a worker thread so the server keeps answering (status polls, health) during a job.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
@@ -28,6 +33,16 @@ from reforge.geometry.completion import Completion
 from reforge.geometry.height import correct_height
 from reforge.reasoning.interpret import GeometricInterpreter
 from reforge.reasoning.reconstruct import Reconstruction, reconstruct
+from reforge.spec.confidence import (
+    CALIPER_U_MM,
+    MODEL_NOTE,
+    ErrorBudget,
+    Estimate,
+    Term,
+    build_budget,
+    min_rect_mm,
+    with_mirror,
+)
 from reforge.spec.partspec import (
     MAX_POINTS,
     MIN_WALL_MM,
@@ -45,10 +60,14 @@ from reforge.validation.mesh import summarize, validate_part
 from reforge.vision.refine import RefinedProfile, refine_profile
 from reforge.vision.segment import Segmentation
 
-CALIPER_UNCERTAINTY_MM = 0.05  # default instrument + reading, 2σ; the user can override
+CALIPER_UNCERTAINTY_MM = CALIPER_U_MM  # default instrument + reading, 2σ; the user can override
 MIN_TRACE_SHARE = 0.2  # below this the trace is a fragment of something else: refuse before any model call
 ROUND_HOLE_MAX_DEVIATION_MM = 0.12
 OVERLAY_MARGIN_MM = 8.0
+# The stages, in order, as reported to ``progress`` and in ``timings_s``.
+STAGES = ("load", "calibrate_rectify", "segment", "refine", "pose_height", "interpret_reconstruct",
+          "spec_build_validate", "write")
+Progress = Callable[[str, str, float | None], None]  # (stage, "running" | "done", seconds when done)
 
 
 class Segmenter(Protocol):
@@ -104,12 +123,14 @@ def _buildable(outline: Outline, holes: list[CircleHole | PolygonHole]
     return sorted(kept, key=lambda h: order[h.id]), notes
 
 
-def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Completion | None = None
-                    ) -> tuple[PartSpec, list[dict]]:
+def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Completion | None = None,
+                    budget: ErrorBudget | None = None) -> tuple[PartSpec, list[dict], dict[str, dict[str, Estimate]]]:
     """The footprint as a PartSpec in the model frame, plus notes on anything left out.
 
     With a ``completion``, the outline is the mirror-completed one with its provenance runs, and mirrored holes that
-    land in the added material are included as INFERRED."""
+    land in the added material are included as INFERRED. With a ``budget``, every hole parameter carries its 2σ
+    uncertainty (an INFERRED hole adds the mirror's own to its source hole's), and the third value holds each built
+    hole's estimates, term by term, for the report."""
     outer = completion.points if completion is not None else profile.outer.points_mm
     x0, y0 = outer.min(axis=0)
     x1, y1 = outer.max(axis=0)
@@ -125,6 +146,12 @@ def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Compl
     notes: list[dict] = []
     holes: list[CircleHole | PolygonHole] = []
     sigma = profile.edge_sigma_mm or 0.0
+    source_u: dict[str, tuple[Estimate, Estimate]] = {}  # profile hole id → (diameter, centre) estimates
+    estimates: dict[str, dict[str, Estimate]] = {}  # spec hole id → estimates
+
+    def u(estimate: Estimate | None) -> float | None:
+        return None if estimate is None else round(estimate.u_mm, 4)
+
     for cand in profile.holes:
         if cand.doubt:
             notes.append({"hole": cand.hole_id, "excluded": True, "status": Status.UNCERTAIN.value,
@@ -142,9 +169,15 @@ def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Compl
             ev = (Evidence(kind="circle_fit", detail=f"{model}: rms {fit.rms:.3f} mm, max dev {fit.max_deviation:.3f} "
                            f"mm, {fit.n_points} edge points; blur-curvature correction +{2 * curvature:.4f} mm on Ø "
                            f"(edge σ {sigma:.3f} mm); {agree}"),)
-            holes.append(CircleHole(id=hid, center_x=Param(value=cx, status=Status.OBSERVED, evidence=ev),
-                                    center_y=Param(value=cy, status=Status.OBSERVED, evidence=ev),
-                                    diameter=Param(value=fit.diameter, status=Status.OBSERVED, evidence=ev)))
+            d_est = budget.diameter(fit.diameter, fit.rms, fit.n_points) if budget else None
+            c_est = budget.length(float(np.hypot(cx, cy))) if budget else None
+            if d_est is not None and c_est is not None:
+                source_u[cand.hole_id] = (d_est, c_est)
+                estimates[hid] = {"diameter": d_est, "center": c_est}
+            holes.append(CircleHole(
+                id=hid, center_x=Param(value=cx, status=Status.OBSERVED, uncertainty_mm=u(c_est), evidence=ev),
+                center_y=Param(value=cy, status=Status.OBSERVED, uncertainty_mm=u(c_est), evidence=ev),
+                diameter=Param(value=fit.diameter, status=Status.OBSERVED, uncertainty_mm=u(d_est), evidence=ev)))
         else:
             hp = np.asarray(orient(Polygon(mat_to_model(cand.contour.points_mm, origin)), 1.0).exterior.coords)[:-1]
             holes.append(PolygonHole(id=hid, points=tuple(map(tuple, _simplify(hp))), status=Status.OBSERVED,
@@ -154,31 +187,45 @@ def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Compl
         radius = inferred.radius + sigma**2 / (2 * inferred.radius)
         ev = (Evidence(kind="mirror", detail=f"mirror of {inferred.source_hole_id} about {completion.axis.axis_id} "
                                              f"(support {completion.axis.support:.0%}); lands in the added material"),)
-        holes.append(CircleHole(id=f"H{len(holes)}", center_x=Param(value=cx, status=Status.INFERRED, evidence=ev),
-                                center_y=Param(value=cy, status=Status.INFERRED, evidence=ev),
-                                diameter=Param(value=2 * radius, status=Status.INFERRED, evidence=ev)))
+        d_est = c_est = None
+        if inferred.source_hole_id in source_u:
+            mirror = completion.inferred_uncertainty_mm()
+            d_src, c_src = source_u[inferred.source_hole_id]
+            d_est = with_mirror(d_src, mirror, completion.axis.axis_id)
+            c_est = with_mirror(c_src, mirror, completion.axis.axis_id)
+            estimates[f"H{len(holes)}"] = {"diameter": d_est, "center": c_est}
+        holes.append(CircleHole(
+            id=f"H{len(holes)}", center_x=Param(value=cx, status=Status.INFERRED, uncertainty_mm=u(c_est), evidence=ev),
+            center_y=Param(value=cy, status=Status.INFERRED, uncertainty_mm=u(c_est), evidence=ev),
+            diameter=Param(value=2 * radius, status=Status.INFERRED, uncertainty_mm=u(d_est), evidence=ev)))
     holes, dropped = _buildable(outline, holes)
     notes += dropped
     try:
         spec = PartSpec(outline=outline, holes=tuple(holes), thickness=thickness)
     except ValueError as exc:  # pydantic ValidationError subclasses ValueError
         raise ReforgeError("SPEC_INVALID", str(exc)[:600], "Check the photo and the segmentation.") from exc
-    return spec, notes
+    return spec, notes, estimates
 
 
-PROVENANCE_COLOURS = {"OBSERVED": (255, 230, 0), "INFERRED": (200, 60, 200), "UNCERTAIN": (40, 40, 230)}  # BGR
+# BGR, matching the UI's evidence palette: blue measured from the photo, ember rebuilt, red uncertain.
+PROVENANCE_COLOURS = {"OBSERVED": (235, 99, 37), "INFERRED": (12, 65, 194), "UNCERTAIN": (28, 28, 185)}
+DOUBTED_HOLE_COLOUR = (0, 170, 245)  # amber: a hole candidate left out
+AXIS_COLOUR = (70, 60, 50)
+HALO_COLOUR = (255, 255, 255)
 
 
 OVERLAY_WIDTH_PX = 1400
 
 
-def _overlay(view: RectifiedView, seg: Segmentation, profile: RefinedProfile, footprint: RefinedProfile,
-             completion: Completion | None = None) -> np.ndarray:
-    """Segmentation tint, photographed outline (blue) and holes (green), and the height-corrected footprint (cyan):
-    the footprint sits inside the photographed outline wherever the top edge was seen. With a mirror completion, the
-    final outline is drawn thicker, coloured by provenance (magenta INFERRED, red UNCERTAIN), with the axis dashed.
+def _overlay(view: RectifiedView, profile: RefinedProfile, footprint: RefinedProfile,
+             completion: Completion | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """The rectified photo of the part, cropped and enlarged to about ``OVERLAY_WIDTH_PX`` (so lines stay sharp), and
+    the same crop with what was measured drawn on it. Both share one framing, so the UI can compare them.
 
-    The view is cropped to the part and enlarged to about ``OVERLAY_WIDTH_PX`` before drawing, so lines stay sharp."""
+    Drawn: the rebuilt material (ember hatch); the photographed outline (thin white); the built footprint, which
+    is height-corrected and so sits just inside the photographed outline, coloured by provenance (blue measured from
+    the photo, ember rebuilt by the mirror, red uncertain), with a white halo for contrast on dark parts; the holes
+    (blue, ember when mirrored, amber when left out); and the mirror axis, dashed."""
     extent = profile.outer.points_mm if completion is None else np.vstack([profile.outer.points_mm, completion.points])
     px = view.mm_to_px(extent)
     margin = OVERLAY_MARGIN_MM * view.px_per_mm
@@ -187,38 +234,59 @@ def _overlay(view: RectifiedView, seg: Segmentation, profile: RefinedProfile, fo
     x1, y1 = np.minimum(np.ceil(px.max(axis=0) + margin).astype(int), [w_img, h_img])
     k = max(1.0, OVERLAY_WIDTH_PX / max(x1 - x0, 1))
     crop = cv2.resize(view.image[y0:y1, x0:x1], None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
-    mask = cv2.resize(seg.mask[y0:y1, x0:x1].astype(np.uint8), (crop.shape[1], crop.shape[0]),
-                      interpolation=cv2.INTER_NEAREST).astype(bool)
 
     def to_px(points_mm: np.ndarray) -> np.ndarray:
         return np.round((view.mm_to_px(points_mm) - [x0, y0]) * k).astype(np.int32)
 
-    tint = crop.copy()
-    tint[mask] = (0.6 * tint[mask] + 0.4 * np.array([255, 140, 0])).astype(np.uint8)
-    out = cv2.addWeighted(tint, 0.6, crop, 0.4, 0)
-    thin, thick = max(1, int(round(k * 0.6))), max(2, int(round(k * 1.2)))
-    cv2.polylines(out, [to_px(profile.outer.points_mm)], True, (255, 90, 0), thin, cv2.LINE_AA)
+    out = crop.copy()
+    if completion is not None:  # the rebuilt material: ember, translucent and hatched
+        layer = out.copy()
+        hatch = np.zeros(out.shape[:2], np.uint8)
+        step = max(10, out.shape[1] // 90)
+        for x in range(-out.shape[0], out.shape[1], step):
+            cv2.line(hatch, (x, out.shape[0]), (x + out.shape[0], 0), 255, max(2, step // 4), cv2.LINE_AA)
+        for region in (r for r in completion.regions if r.filled):
+            area = np.zeros(out.shape[:2], np.uint8)
+            cv2.fillPoly(area, [to_px(np.asarray(region.polygon.exterior.coords))], 255, cv2.LINE_AA)
+            layer[area > 0] = PROVENANCE_COLOURS["INFERRED"]
+            out = np.where(((area > 0) & (hatch > 0))[..., None], layer, out)
+            out = np.where((area > 0)[..., None], cv2.addWeighted(out, 0.72, layer, 0.28, 0), out)
+    thin = max(2, OVERLAY_WIDTH_PX // 700)
+    thick = max(3, OVERLAY_WIDTH_PX // 360)
+    halo = thick + max(3, OVERLAY_WIDTH_PX // 500)
+
+    def line(points: np.ndarray, colour: tuple[int, int, int], closed: bool = True, width: int = thick) -> None:
+        cv2.polylines(out, [points], closed, HALO_COLOUR, width + (halo - thick), cv2.LINE_AA)
+        cv2.polylines(out, [points], closed, colour, width, cv2.LINE_AA)
+
+    cv2.polylines(out, [to_px(profile.outer.points_mm)], True, HALO_COLOUR, thin, cv2.LINE_AA)
     for h in profile.holes:
-        color = (0, 200, 255) if h.doubt else (60, 220, 60)
-        cv2.polylines(out, [to_px(h.contour.points_mm)], True, color, thin, cv2.LINE_AA)
-    for contour in (footprint.outer, *(h.contour for h in footprint.holes)):
-        cv2.polylines(out, [to_px(contour.points_mm)], True, (255, 230, 0), thin, cv2.LINE_AA)
-    if completion is not None:
+        if h.doubt:
+            pts = to_px(h.contour.points_mm)
+            for i in range(0, len(pts), 6):  # dotted: left out of the model
+                cv2.polylines(out, [pts[i:i + 3]], False, DOUBTED_HOLE_COLOUR, thick, cv2.LINE_AA)
+    if completion is None:
+        line(to_px(footprint.outer.points_mm), PROVENANCE_COLOURS["OBSERVED"])
+    else:
         closed = np.vstack([completion.points, completion.points[:1]])
         for run in completion.runs:
-            cv2.polylines(out, [to_px(closed[run.start:run.end + 2])], False, PROVENANCE_COLOURS[run.status], thick,
-                          cv2.LINE_AA)
+            line(to_px(closed[run.start:run.end + 2]), PROVENANCE_COLOURS[run.status], closed=False)
         for hole in completion.inferred_holes:
             c = to_px(np.array([hole.center]))[0]
-            cv2.circle(out, tuple(int(v) for v in c), int(round(hole.radius * view.px_per_mm * k)),
-                       PROVENANCE_COLOURS["INFERRED"], thick, cv2.LINE_AA)
+            r = int(round(hole.radius * view.px_per_mm * k))
+            cv2.circle(out, tuple(int(v) for v in c), r, (238, 240, 242), -1, cv2.LINE_AA)  # a hole: see-through
+            cv2.circle(out, tuple(int(v) for v in c), r, HALO_COLOUR, halo, cv2.LINE_AA)
+            cv2.circle(out, tuple(int(v) for v in c), r, PROVENANCE_COLOURS["INFERRED"], thick, cv2.LINE_AA)
         axis = completion.axis
         ends = to_px(np.array([np.asarray(axis.point) + t * axis.direction for t in (-60.0, 60.0)])).astype(float)
         for t in np.arange(0.0, 1.0, 0.03):
             a, b = ends[0] + (ends[1] - ends[0]) * t, ends[0] + (ends[1] - ends[0]) * min(t + 0.015, 1.0)
-            cv2.line(out, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), (90, 90, 90), thin,
+            cv2.line(out, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), AXIS_COLOUR, thick,
                      cv2.LINE_AA)
-    return out
+    for h in footprint.holes:
+        if not h.doubt:
+            line(to_px(h.contour.points_mm), PROVENANCE_COLOURS["OBSERVED"])
+    return crop, out
 
 
 def _reconstruction_report(recon: Reconstruction) -> dict:
@@ -262,47 +330,109 @@ def _extent(points_mm: np.ndarray) -> list[float]:
     return [round(float(v), 3) for v in np.ptp(points_mm, axis=0)]
 
 
+def _dimension(dim_id: str, label: str, value: float, status: str, estimate: Estimate | None,
+               u_mm: float | None = None) -> dict:
+    u = estimate.u_mm if estimate is not None else u_mm
+    return {"id": dim_id, "label": label, "value_mm": round(value, 3), "status": status,
+            "u_mm": None if u is None else round(u, 3),
+            "dominant": estimate.dominant if estimate is not None else None,
+            "terms": [t.to_dict() for t in estimate.terms] if estimate is not None else []}
+
+
+def _confidence_report(spec: PartSpec, budget: ErrorBudget, completion: Completion | None,
+                       estimates: dict[str, dict[str, Estimate]]) -> tuple[dict, dict]:
+    """The part's caliper-style size (smallest enclosing rectangle) and every dimension with its 2σ estimate."""
+    length, width, angle = min_rect_mm(np.asarray(spec.outline.points))
+    status = Status.INFERRED.value if completion is not None else Status.OBSERVED.value
+
+    def size(value: float) -> Estimate:
+        est = budget.length(value)
+        return with_mirror(est, completion.inferred_uncertainty_mm(), completion.axis.axis_id) if completion else est
+
+    dims = [_dimension("length", "Length", length, status, size(length)),
+            _dimension("width", "Width", width, status, size(width)),
+            _dimension("thickness", "Thickness", spec.thickness.value, spec.thickness.status.value,
+                       Estimate((Term("caliper", (spec.thickness.uncertainty_mm or CALIPER_U_MM) / 2,
+                                      "your caliper reading (instrument + reading)"),)))]
+    for hole in spec.holes:
+        if isinstance(hole, CircleHole):
+            est = estimates.get(hole.id, {})
+            dims.append(_dimension(f"{hole.id}.diameter", f"Hole {hole.id} Ø", hole.diameter.value,
+                                   hole.diameter.status.value, est.get("diameter"), hole.diameter.uncertainty_mm))
+            dims.append(_dimension(f"{hole.id}.position", f"Hole {hole.id} position",
+                                   float(np.hypot(hole.center_x.value, hole.center_y.value)),
+                                   hole.center_x.status.value, est.get("center"), hole.center_x.uncertainty_mm))
+        else:
+            dims.append({"id": f"{hole.id}.shape", "label": f"Hole {hole.id} (traced shape)", "value_mm": None,
+                         "status": hole.status.value, "u_mm": None, "dominant": None, "terms": [],
+                         "note": "a non-round hole is built as traced; its edge carries the outline's uncertainty"})
+    size_mm = {"length": round(length, 3), "width": round(width, 3), "thickness": round(spec.thickness.value, 3),
+               "angle_deg": round(angle, 2), "basis": "smallest rectangle around the built outline (caliper-style)"}
+    return size_mm, {"note": MODEL_NOTE, "budget": budget.to_dict(), "dimensions": dims}
+
+
 async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmenter: Segmenter, *,
                        bar_x_mm: float | None = None, bar_y_mm: float | None = None,
                        thickness_uncertainty_mm: float = CALIPER_UNCERTAINTY_MM, job_id: str | None = None,
-                       focal_35mm: float | None = None, interpreter=None) -> dict:
+                       focal_35mm: float | None = None, interpreter=None, progress: Progress | None = None) -> dict:
     """``focal_35mm`` is the photo's EXIF focal length (35 mm equivalent). When it isn't given, it's read from the
     photo file itself; uploads pass it explicitly because they're re-encoded without metadata.
 
     ``interpreter`` reads the part for the reconstruction: ``SparkInterpreter`` (Muse Spark) or, by default, the
-    ``GeometricInterpreter`` rule (not AI)."""
+    ``GeometricInterpreter`` rule (not AI). ``progress`` is called as each of ``STAGES`` starts and ends."""
     interpreter = interpreter or GeometricInterpreter()
     timings: dict[str, float] = {}
+    current: dict[str, object] = {}
 
-    def lap(name: str, t0: float) -> float:
-        timings[name] = round(time.perf_counter() - t0, 3)
-        return time.perf_counter()
+    def begin(name: str) -> None:
+        current.update(name=name, t0=time.perf_counter())
+        if progress is not None:
+            progress(name, "running", None)
 
-    t = time.perf_counter()
-    image = cv2.imread(str(photo), cv2.IMREAD_COLOR)  # applies EXIF orientation
+    def end() -> None:
+        name = str(current["name"])
+        timings[name] = round(time.perf_counter() - float(current["t0"]), 3)
+        if progress is not None:
+            progress(name, "done", timings[name])
+
+    begin("load")
+    image = await asyncio.to_thread(cv2.imread, str(photo), cv2.IMREAD_COLOR)  # applies EXIF orientation
     if image is None:
         raise ReforgeError("IMAGE_INVALID", f"Could not read {photo.name} as an image.")
     if focal_35mm is None:
         focal_35mm = focal_35mm_from_exif(photo.read_bytes())
-    t = lap("load", t)
-    cal = calibrate(image, bar_x_mm=bar_x_mm, bar_y_mm=bar_y_mm)
-    view = rectify(image, cal)
-    t = lap("calibrate_rectify", t)
+    end()
+    begin("calibrate_rectify")
+
+    def _calibrate() -> tuple:
+        cal = calibrate(image, bar_x_mm=bar_x_mm, bar_y_mm=bar_y_mm)
+        return cal, rectify(image, cal)
+
+    cal, view = await asyncio.to_thread(_calibrate)
+    end()
+    begin("segment")
     seg = await segmenter.segment(view)
-    t = lap("segment", t)
-    profile = refine_profile(view, seg.mask)
-    t = lap("refine", t)
+    end()
+    begin("refine")
+    profile = await asyncio.to_thread(refine_profile, view, seg.mask)
+    end()
     if profile.trace_share is not None and profile.trace_share < MIN_TRACE_SHARE:
         raise ReforgeError(
             "TRACE_PARTIAL",
             f"The traced outline covers only {profile.trace_share:.0%} of what's on the mat, so it's a fragment of a "
             "larger or multi-coloured object, not a part outline. No model was built.",
             "Photograph one flat, single-colour part alone in the mat's free zone.")
-    pose = estimate_pose(cal, focal_35mm)
-    height = correct_height(profile, pose, thickness_mm, round_max_deviation_mm=ROUND_HOLE_MAX_DEVIATION_MM)
-    t = lap("pose_height", t)
+    begin("pose_height")
+
+    def _pose_height() -> tuple:
+        pose = estimate_pose(cal, focal_35mm)
+        return pose, correct_height(profile, pose, thickness_mm, round_max_deviation_mm=ROUND_HOLE_MAX_DEVIATION_MM)
+
+    pose, height = await asyncio.to_thread(_pose_height)
+    end()
+    begin("interpret_reconstruct")
     recon = await reconstruct(view, height.profile, interpreter, thickness_mm=thickness_mm)
-    t = lap("interpret_reconstruct", t)
+    end()
     analysis = recon.interpretation.analysis
     if analysis.family != "extruded_profile":
         # Building a flat extrusion of a pipe, say, would be a confident-looking hallucination: refuse instead.
@@ -312,27 +442,42 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
             f"({analysis.family.replace('_', ' ')}): {analysis.family_reason}"[:400],
             "RE-FORGE rebuilds flat parts of uniform thickness, photographed from above on the mat. No model was "
             "built.")
+    begin("spec_build_validate")
     thickness = Param(value=thickness_mm, status=Status.MEASURED, uncertainty_mm=thickness_uncertainty_mm,
                       evidence=(Evidence(kind="caliper", detail="entered by the user"),))
-    spec, notes = profile_to_spec(height.profile, thickness, recon.completion)
-    part = build_part(spec)
-    validation = summarize(validate_part(part, spec))
-    t = lap("spec_build_validate", t)
+    budget = build_budget(fit_rms_mm=cal.rms_mm, loo_rms_mm=cal.loo_rms_mm,
+                          bars_checked=(bar_x_mm is not None) + (bar_y_mm is not None), px_per_mm=cal.px_per_mm,
+                          refined=profile.refined, u_persp_2sigma_mm=height.u_persp_mm)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    write_stl(part, out_dir / "model.stl")
-    (out_dir / "model.scad").write_text(emit_scad(spec, job_id), encoding="utf-8")
-    (out_dir / "spec.json").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
-    cv2.imwrite(str(out_dir / "overlay.png"), _overlay(view, seg, profile, height.profile, recon.completion))
-    cv2.imwrite(str(out_dir / "setofmark.png"), recon.marked_bgr)
-    lap("write", t)
+    def _build() -> tuple:
+        spec, notes, estimates = profile_to_spec(height.profile, thickness, recon.completion, budget)
+        part = build_part(spec)
+        return spec, notes, estimates, part, summarize(validate_part(part, spec))
+
+    spec, notes, estimates, part, validation = await asyncio.to_thread(_build)
+    end()
+    begin("write")
+
+    def _write() -> None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        write_stl(part, out_dir / "model.stl")
+        (out_dir / "model.scad").write_text(emit_scad(spec, job_id), encoding="utf-8")
+        (out_dir / "spec.json").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
+        crop, overlay = _overlay(view, profile, height.profile, recon.completion)
+        cv2.imwrite(str(out_dir / "photo.jpg"), crop, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        cv2.imwrite(str(out_dir / "overlay.png"), overlay)
+        cv2.imwrite(str(out_dir / "setofmark.png"), recon.marked_bgr)
+
+    await asyncio.to_thread(_write)
+    end()
 
     mesh = part.to_trimesh()
     (bx0, by0, bz0), (bx1, by1, bz1) = mesh.bounds
+    size_mm, confidence = _confidence_report(spec, budget, recon.completion, estimates)
     report = {
         "job_id": job_id,
         "photo": photo.name,
-        "milestone": "D4: measured geometry, height-corrected; mirror reconstruction of a broken part",
+        "milestone": "D5: measured geometry, height-corrected; mirror reconstruction; modelled 2σ for every dimension",
         "calibration": {"page": cal.page, "markers": len(cal.marker_ids), "fit_rms_mm": round(cal.rms_mm, 4),
                         "corner_bias_px": round(cal.corner_bias_px, 3),
                         "loo_rms_mm": None if cal.loo_rms_mm is None else round(cal.loo_rms_mm, 4),
@@ -361,16 +506,20 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
                               "occlusion_bound_mm": round(height.occlusion_bound_mm, 3)},
         "part": {"overall_mm": [round(bx1 - bx0, 3), round(by1 - by0, 3), round(bz1 - bz0, 3)],
                  "overall_status": Status.INFERRED.value if recon.completion else Status.OBSERVED.value,
+                 "size_mm": size_mm,
                  "holes": [{"id": h.id, "kind": h.kind,
                             "status": (h.diameter.status if isinstance(h, CircleHole) else h.status).value,
                             **({"diameter_mm": round(h.diameter.value, 3),
+                                "diameter_u_mm": h.diameter.uncertainty_mm,
                                 "center_mm": [round(h.center_x.value, 3), round(h.center_y.value, 3)]}
                                if isinstance(h, CircleHole) else {"source": h.source})} for h in spec.holes],
                  "excluded_candidates": notes, "unresolved": spec.unresolved()},
+        "confidence": confidence,
         "validation": validation,
         "timings_s": timings,
         "reconstruction": _reconstruction_report(recon),
-        "outputs": ["model.stl", "model.scad", "spec.json", "overlay.png", "setofmark.png", "report.json"],
+        "outputs": ["model.stl", "model.scad", "spec.json", "photo.jpg", "overlay.png", "setofmark.png",
+                    "report.json"],
         "disclaimer": "A reconstruction, not a verified replacement part. Not for safety-critical use.",
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")

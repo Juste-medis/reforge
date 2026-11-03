@@ -193,13 +193,16 @@ class _DiagonalInterpreter:
 
     is_ai = True
     method = "diagonal-test-backend"
+    direction_deg = 45.0  # modulo 90°: either diagonal
+
+    def pick(self, axes: list[dict]) -> str:
+        return next(a["id"] for a in axes if abs((a["direction_deg"] - self.direction_deg + 45) % 90 - 45) < 1.0)
 
     async def interpret(self, request):
         from reforge.reasoning.analysis import PartAnalysis
         from reforge.reasoning.interpret import Interpretation
 
-        diagonal = next(a["id"] for a in request.facts["mirror_axes"]
-                        if abs((a["direction_deg"] - 45.0 + 45) % 90 - 45) < 1.0)
+        diagonal = self.pick(request.facts["mirror_axes"])
         data = {"object_name": "flange", "family": "extruded_profile", "family_reason": "flat plate",
                 "is_broken": True, "fracture_segment_ids": [k for k, v in request.segment_kinds.items()
                                                             if v == "irregular"],
@@ -210,9 +213,48 @@ class _DiagonalInterpreter:
         return Interpretation(analysis, self.method, True, 0.0, 0.0, {})
 
 
-def test_a_chosen_axis_that_rebuilds_only_part_of_the_break_is_rejected(tmp_path: Path) -> None:
+class _CrosswiseInterpreter(_DiagonalInterpreter):
+    """Chooses the flange's top-bottom axis: a real symmetry, but it maps the right-hand break onto itself, as Muse
+    Spark did live on 2026-11-03 (TEST BACKEND)."""
+
+    method = "crosswise-test-backend"
+
+    def pick(self, axes: list[dict]) -> str:
+        return next(a["id"] for a in axes if min(a["direction_deg"] % 180, 180 - a["direction_deg"] % 180) < 1.0)
+
+
+@pytest.mark.parametrize("interpreter", [_DiagonalInterpreter(), _CrosswiseInterpreter()],
+                         ids=["diagonal", "crosswise"])
+def test_an_axis_that_cant_rebuild_the_break_is_rejected_then_corrected_by_geometry(tmp_path: Path,
+                                                                                   interpreter) -> None:
     report = asyncio.run(photo_to_stl(_photo(tmp_path, broken_flange(LAYOUT)), tmp_path / "out", 3.0,
-                                      ClassicalSegmenter(), job_id="diag", interpreter=_DiagonalInterpreter()))
+                                      ClassicalSegmenter(), job_id="axis", interpreter=interpreter))
     recon = report["reconstruction"]
-    assert recon["completion"] is None
-    assert "AXIS_PARTIAL" in {n["code"] for n in recon["verification"] if n["level"] == "rejected"}
+    notes = {n["code"]: n for n in recon["verification"]}
+    rejected = {n["code"] for n in recon["verification"] if n["level"] == "rejected"}
+    assert rejected & {"AXIS_PARTIAL", "FRACTURE_MATCHES_MIRROR"}  # the reading's own axis still fails, and says why
+    assert "AXIS_CORRECTED" in notes and notes["AXIS_CORRECTED"]["level"] == "warning"
+    assert "NO_FRACTURE" not in notes  # superseded: something is reconstructed
+    completion = recon["completion"]
+    assert completion is not None and completion["axis"] != recon["interpretation"]["analysis"]["mirror_axis_id"]
+    assert completion["added_area_mm2"] > 400
+    assert len(completion["inferred_holes"]) == 2  # the two bolt holes the break took
+    assert all(h["diameter_mm"] == pytest.approx(5.5, abs=0.05) for h in completion["inferred_holes"])
+    assert report["validation"]["valid"]
+
+
+class _NotBrokenInterpreter(_DiagonalInterpreter):
+    """Says the flange is intact (TEST BACKEND): geometry must not override that and rebuild anything."""
+
+    async def interpret(self, request):
+        result = await super().interpret(request)
+        analysis = result.analysis.model_copy(update={"is_broken": False, "fracture_segment_ids": (),
+                                                      "mirror_axis_id": "none"})
+        return type(result)(analysis, result.method, True, 0.0, 0.0, {})
+
+
+def test_geometry_doesnt_rebuild_what_the_reading_calls_intact(tmp_path: Path) -> None:
+    report = asyncio.run(photo_to_stl(_photo(tmp_path, broken_flange(LAYOUT)), tmp_path / "out", 3.0,
+                                      ClassicalSegmenter(), job_id="intact", interpreter=_NotBrokenInterpreter()))
+    assert report["reconstruction"]["completion"] is None
+    assert "AXIS_CORRECTED" not in {n["code"] for n in report["reconstruction"]["verification"]}
