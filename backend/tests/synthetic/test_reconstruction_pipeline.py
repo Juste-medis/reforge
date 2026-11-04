@@ -189,7 +189,7 @@ def test_broken_flange_is_rebuilt_with_the_holes_the_break_took(tmp_path: Path) 
 
 
 class _DiagonalInterpreter:
-    """Chooses a diagonal axis of the broken flange and the irregular segments as the fracture (TEST BACKEND)."""
+    """Chooses a diagonal axis of the broken flange and the break segments as the fracture (TEST BACKEND)."""
 
     is_ai = True
     method = "diagonal-test-backend"
@@ -205,7 +205,7 @@ class _DiagonalInterpreter:
         diagonal = self.pick(request.facts["mirror_axes"])
         data = {"object_name": "flange", "family": "extruded_profile", "family_reason": "flat plate",
                 "is_broken": True, "fracture_segment_ids": [k for k, v in request.segment_kinds.items()
-                                                            if v == "irregular"],
+                                                            if v in ("irregular", "broken")],
                 "fracture_reason": "", "symmetry": "mirror", "mirror_axis_id": diagonal, "symmetry_reason": "",
                 "holes": [], "missing_features": [], "required_measurements": []}
         analysis = PartAnalysis.model_validate(data, context={"seg_ids": request.seg_ids, "axis_ids": request.axis_ids,

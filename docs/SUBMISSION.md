@@ -52,9 +52,14 @@ Optional. Only if a post of the demo is published on X (engagement counts until 
 > can't support: 3D objects, varying thickness, a trace that is only part of an object. It tells you why instead of
 > producing a confident-looking but wrong model.
 >
-> On the three bundled synthetic examples, sizes come out within 0.04 mm of the known truth, and a broken flange's two
-> lost bolt holes are inferred with diameters within 0.005 mm. On a first real part photographed on the printed mat, the height came
-> out within 0.41 mm of the caliper reading.
+> It also exports the flat pattern (DXF, SVG at true size) for parts that are cut rather than printed, such as a
+> gasket or a shim.
+>
+> On a real photo of a real gasket, placed on the mat at a known size, it measures within 0.012 mm and traces all
+> nine holes without inventing anything, even when the AI once wrongly called it broken. On a real photo of a broken
+> chain sprocket, it rebuilds the missing half within 0.18 mm live (0.08 mm offline). On a rendered broken flange,
+> it rebuilds the missing side within 0.015 mm and infers the two lost bolt holes within 0.005 mm. On a first real
+> part photographed on the printed mat, the height came out within 0.41 mm of the caliper reading.
 
 ## Public GitHub Repository*
 
@@ -72,18 +77,19 @@ The YouTube link, once recorded. Plan: `docs/DEMO_SCRIPT.md`.
 > - **SAM 3.1** segments the part on the rectified mat view through the Responses API. We use box prompts derived from
 >   a local colour proposal, with a noun-phrase fallback, request confidences, and decode the box-local masks with
 >   meta-sam-parser. Live measurements on the mat showed text prompts returning 0 instances while box and point prompts
->   reached 0.99 confidence, so the segmenter is box-first. Over 74 calls: median latency 3.0 s, $0.0025 per image.
+>   reached 0.99 confidence, so the segmenter is box-first. Over 99 successful calls: median latency 3.1 s, $0.0025 per image.
 > - **Muse Spark 1.3** interprets the part from two images: the photo of the mat's free zone, and a Set-of-Mark view
 >   where the outline is cut into numbered segments S#, candidate mirror axes are drawn as A#, and holes are labelled
 >   H#. It also receives measured facts as JSON: segment lengths, hole sizes, each axis's measured support and the
 >   material its mirror would add. It answers through a strict JSON schema whose enums are generated per request from
 >   the ids actually drawn, so it can only point at things that exist. It never estimates a dimension. Every answer is
 >   then verified geometrically: a "fracture" that matches its mirror image is rejected, and an axis that can't
->   rebuild the break is replaced by one that passes the same checks, with the correction reported. Over 62 calls at
->   reasoning effort "low": median latency 12.6 s, about $0.015 per call.
+>   rebuild the break is replaced by one that passes the same checks, with the correction reported. When it claimed a
+>   break on an intact real gasket, geometry rejected the rebuild. Over 87 calls at reasoning effort "low": median
+>   latency 15.0 s, about $0.015 per call; every answer parsed against the strict schema.
 >
 > Every call goes through one client with timeouts, retries, a daily budget guard and a usage ledger, so the app shows
-> each job's real AI cost: $0.016 to $0.023 per analysis on the examples. Total spend while building: $1.22 of the
+> each job's real AI cost: $0.019 to $0.028 per analysis on the examples. Total spend while building: $1.92 of the
 > $150 credits (ledger, 2026-10-28 to 2026-11-03). If the API is unreachable, the UI offers to run the same photo
 > without AI, clearly labelled.
 
@@ -118,7 +124,7 @@ These are personal ratings. Facts from this project that may help:
 | Question | Facts from this project |
 |---|---|
 | How likely are you to build with Meta Model API?* | It's OpenAI-SDK compatible, and we used Chat Completions and Responses through `AsyncOpenAI` with a `base_url`. Strict `json_schema` output with enums was accepted and respected in every logged call |
-| Overall opinion of Meta Model API?* | 140 ledger records. Failures were only our own tests with an unreachable host (3), and 1 `META_ERROR` traced to our test script reusing a client across event loops |
+| Overall opinion of Meta Model API?* | 203 ledger records. Failures were only our own tests with an unreachable host (3), and 2 `META_ERROR` traced to our test scripts reusing a client across event loops |
 | Recommend the Meta Model API (0–5) | — |
 | Recommend Muse Code (0–5) | Answer only from your own experience of Muse Code |
 | Biggest obstacle | SAM 3.1 text prompts returned 0 instances on the mat view (design changed to box-first). Muse Spark's answer varies between runs on borderline parts: a family verdict, and the mirror axis of the same flange. Verification catches these, but outcomes vary |

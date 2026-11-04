@@ -316,7 +316,7 @@ The strict structured-output subset for Muse Spark:
 
 ### 5.2 Capture protocol
 
-1. **Print the Re-Forge mat** (A4 or Letter). It has 12 ArUco markers around a plain central zone, a 100 mm check bar and a mat ID.
+1. **Print the Re-Forge mat** (A4 or Letter). It has 12 ArUco markers around a plain central zone, a 100 mm check bar and a mat ID. **Ruler mode (2026-11-04, 🟡):** no printer? Skip the mat: photograph the part straight from above on a plain background and enter its longest side, measured with a ruler. Numbers come out looser (assumed top-down ≤10°, ~±2–3 %); the report says `mode: ruler` and carries the widened budget.
 2. **Measure the bar once** with the caliper. The app stores the correction.
 3. **TOP photo** (revised 2026-10-27, after the height-correction work):
    - Lay the part flat in the centre, and hold the phone roughly parallel, above the part.
@@ -331,7 +331,7 @@ The strict structured-output subset for Muse Spark:
 ### 5.3 In scope, stretch and out of scope
 
 **MVP (M1 + M2):**
-- Calibration and capture-quality checks
+- Calibration and capture-quality checks (mat, plus 🟡 ruler mode without the mat since 2026-11-04)
 - SAM 3.1 segmentation with click refinement
 - Sub-pixel boundary refinement and holes
 - Spark interpretation
@@ -779,6 +779,8 @@ Without a printer, that's stated rather than implied.
 ---
 
 ## 10. Milestone 1: first end-to-end vertical slice (target Wed 28 Oct)
+
+> **Status (2026-11-03, late evening):** the examples are real photos of real parts (freely licensed, credited) plus one rendered part; four reconstruction safety fixes; DXF/SVG cutting exports; a photo-textured 3D preview (`docs/PROGRESS.md`, Session 14). ⛔ Broken toothed outlines are declined, not rebuilt.
 
 > **Status (2026-11-03, afternoon): the product is finished for submission** (`docs/PROGRESS.md`, Session 12; `docs/EVALUATION.md`, 2026-11-03 afternoon).
 > - ✅ Background jobs with real stage progress; Confidence Engine (a modelled 2σ for every dimension); UI export gate; printer hole allowance; three labelled synthetic examples; re-run without AI; the geometric axis correction.

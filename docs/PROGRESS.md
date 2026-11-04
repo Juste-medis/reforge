@@ -536,3 +536,225 @@ every path for real, and prepare the delivery. The reference `tmp/p3.txt` is the
 **Next**
 - **The user:** push, make the repository public, record the video (`docs/DEMO_SCRIPT.md`) with a real unbranded part
   if possible, and fill the form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-03 (Tue, evening): Session 13, automotive-style demo examples
+
+Brief: the examples looked like toys, and the user asked for real parts like the ones on OEM catalog sites (7zap,
+PartSouq, RealOEM…). Catalog images are unusable twice over (sites' copyrighted content, and no calibration mat, so
+no millimetres by design). The three examples were re-rendered as our own OEM-style parts instead: same ids, new
+images, new truth.
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-11-03 evening entry)
+- ✅ **Three new synthetic parts** (`tests/synthetic/scene.py`, cases 21–23 in `tools/make_test_photos.py`):
+  - broken-bracket → graphite **bumper bracket** 94 × 30, ears + 2 × Ø5.0, right ear snapped off, 4 mm thick;
+  - broken-flange → black **mounting flange** 56 × 56, Ø24 bore + 4 × Ø6.5, two holes lost, 5 mm thick;
+  - slotted-link → grey **adjuster link** 80 × 20, 24 × 6.5 slot + 2 × Ø6.5, intact at 30°, 5 mm thick.
+- ✅ **Verified live** (SAM 3.1 + Muse Spark 1.3, standard tier): both broken parts rebuilt, sizes within 0.02 mm of
+  truth (94.001 × 30.000, 56.014 × 56.014), inferred flange holes Ø6.498 / 6.496 vs 6.5, link 80.00 × 20.01.
+  Spark names them "mounting strap", "flange mounting plate", "linkage strap". $0.0513 for the three runs.
+- ✅ **Verified offline** (classical + geometric, 23/23 build, no regressions) and **bundled** (`assets/samples/`,
+  `tools/make_samples.py` updated: new sources, titles, stories, truth). Same ids, so the API, the UI and the
+  existing tests needed no changes.
+- ✅ **Tests:** 170 offline pass (including the end-to-end API run of the new bracket sample); ruff clean; frontend
+  builds (chunk-size warning pre-exists). Ledger total $1.33 of $150.
+- ✅ **Docs:** EVALUATION (new entry), DEMO_SCRIPT, SUBMISSION and README figures updated to the measured numbers.
+
+**Open**
+- 🟡 Both broken samples carry the live `PROFILE_BAND_SATURATED` refinement warning; harmless here (errors above),
+  shown honestly in the UI.
+- 🟡 Screenshots in `docs/media/` and the README still show the previous examples; the numbers in the text are current.
+- 🟡 AT-3 width re-measurement still pending (Session 12); unchanged.
+
+**Next**
+- **The user:** push, make the repository public, record the video (`docs/DEMO_SCRIPT.md`), fill the form
+  (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-03 (night) — Real wanted parts as examples: sprocket pair bundled, three geometry fixes
+
+Brief: the user still found the examples unconvincing ("toys", no story) and asked to keep one and use real
+car/motorcycle parts from `tmp/wanteds/` (breaking one if needed). Of the five photos, the 21-tooth 06A21 sprocket was
+usable flat/single-thickness/mirror-symmetric; the hub carrier Spark refuses live as 3D (correctly); the engine
+drawing, steering wheel and turned bushing are outside the family (3D/not-flat). Two sprocket composites (broken +
+intact) replaced two examples; the flange was kept byte-identical.
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-11-03 night entry)
+- ✅ **Sprocket composites** (`tools/make_wanted_samples.py`): tilt-dewarped cutout at CHOSEN 70.0 mm OD / 5.0 mm,
+  bore cut at the fitted disk centre, all provenance + CHOSEN bases in the truth files. Broken (diameter snap) and
+  intact (25° pose) variants.
+- ✅ **Three geometry fixes**, each verified trial-by-trial against the pick/flange-diagonal/crosswise guards (all
+  still reject) and the 23-photo set (matches baseline, no regressions):
+  - holes rank before outline in `_rank`, sub-mm twins no longer merge-coin-flip (`symmetry.py`);
+  - counterparts relabelled OBSERVED across the part (`FAR_FROM_INVENTED_MM = 20.0`, measured 10.1 / 34.4);
+  - `AXIS_REBUILDS_NOTHING` guard under 2.0 mm invented (`reconstruct.py`).
+- ✅ **Verified offline**: broken sprocket rebuilt 68.986 × 69.876 vs 69.038 × 69.949; intact measured 69.169 × 71.066
+  with nothing rebuilt; carrier 87.938 × 144.050, 4/4 holes.
+- ✅ **Verified live** (SAM 3.1 + Spark 1.3, two runs each, bit-identical geometry): broken 68.864 × 69.819 rebuilt
+  ("broken roller chain sprocket"), intact 69.168 × 70.989 with nothing rebuilt, carrier refused twice as 3D (stable,
+  honest). Spark's one over-picked span on the broken sprocket was rejected by geometry live.
+- ✅ **Bundled**: `broken-flange` kept byte-identical (md5-verified); `broken-sprocket` + `intact-sprocket` with
+  concrete stories (21 teeth, 06A21 stamp, bore-pinned mirror). Bundler takes both source sets; API test runs the new
+  sprocket end to end (box-vs-box comparator for round parts).
+- ✅ **Tests:** 170 offline pass; ruff clean; frontend builds (chunk-size warning pre-exists). Ledger total $1.47
+  of $150 (about $0.14 tonight).
+- ✅ **Docs:** EVALUATION (new entry), PROGRESS, DEMO_SCRIPT, SUBMISSION figures updated to the measured numbers.
+
+**Open**
+- 🟡 Small parts (below ~40 mm) with half missing decline via the 20 mm counterpart gate instead of rebuilding — safe
+  by design, documented in EVALUATION.
+- 🟡 Screenshots in `docs/media/` and the README still show older examples; the numbers in the text are current.
+- 🟡 AT-3 width re-measurement still pending; unchanged.
+
+**Next**
+- **The user:** push, make the repository public, record the video (`docs/DEMO_SCRIPT.md`), fill the form
+  (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-03 (Tue, late evening): Session 14, real photos of real parts; four safety fixes; cutting exports; textured 3D
+
+Brief: "real parts, not toy figures, like the ones in OEM catalogues; push harder on features, models and real images;
+change the hero figure". This session reviewed the previous session's work first. Measured numbers are in
+`docs/EVALUATION.md` (2026-11-03 night entry).
+
+**Review of Sessions 13 and night (previous session)**
+- ✅ Kept: the rendered OEM-style parts in the test set, the symmetry-search changes (0.5° sweep, holes ranked first,
+  per-axis mirror pass), and the `AXIS_REBUILDS_NOTHING` guard. The offline suite passed on them (170).
+- ⛔ **Withdrawn:** the 20 mm "counterpart" relabelling. On a torn gasket it labelled an uncovered tear OBSERVED and let
+  a partial rebuild pass. A replacement rule failed differently (it passed a pick's own fracture). No relabelling now.
+- ⛔ **Not published:** the two sprocket examples. They were built from an image pasted from the web, with unknown
+  rights; they are moved to `tmp/samples_removed/` and can come back if the user owns the photo.
+
+**Done**
+- ✅ **Examples from real photos**, freely licensed on Wikimedia Commons, credited in the app and in
+  `assets/samples/CREDITS.md` (`tools/make_commons_samples.py`, `tools/make_samples.py`):
+  - a real square gasket (Miya.m, CC BY-SA 3.0): live within 0.012 mm, 9 holes, nothing invented;
+  - a real 18-tooth chain cog (public domain), four teeth broken off digitally: honestly declined;
+  - one rendered broken flange, labelled rendered: rebuilt within 0.015 mm, lost holes within 0.005 mm.
+- ✅ **New hero:** a before/after slider of Re-Forge's real output on the real gasket, with the measured numbers and
+  the photo's credit, in place of the illustration.
+- ✅ **Four safety fixes in the reconstruction:**
+  - no counterpart relabelling;
+  - `AXIS_ASYMMETRIC`: it stopped a false rebuild of the intact gasket, offline and when Spark claimed a break;
+  - mirrored holes straddling the fracture are inferred;
+  - `FRACTURE_EXTENDED`: a rough edge split by the decomposer is one break, which turned a hidden partial rebuild of
+    the cog into an honest `AXIS_PARTIAL`.
+- ✅ **Cutting exports** `model.dxf` (R12, mm) and `model.svg` (true size), with the hole allowance. The DXF is read back
+  by `ezdxf` (new dev dependency) in the tests. The UI has a "Cut it" row.
+- ✅ **Photo-textured 3D preview**: `texture.jpg` (the photo where photographed, ember where rebuilt, per pixel) mapped on
+  the top face; the walls get the measured colour; a "Photo" toggle. The projection was checked.
+- ✅ **Tests:** 172 offline pass; ruff clean; the frontend builds. In the browser: axe-core 0 violations (one contrast
+  issue found and fixed), no overflow at 390 px.
+- ✅ **Docs:** README, SUBMISSION, DEMO_SCRIPT, PLAN, THIRD_PARTY_NOTICES and the screenshots in `docs/media/` updated.
+- **Spend today:** $0.90 on the ledger (92 calls); $1.77 in total of the $150.
+
+**Open**
+- ⛔ Broken toothed outlines aren't rebuilt (documented); 🟡 pale parts on white trace their holes roughly.
+- 🟡 AT-3 width re-measurement still pending; no real part with holes yet.
+
+**Next**
+- **The user:** commit and push, make the repository public, record the video (`docs/DEMO_SCRIPT.md`), fill the form
+  (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-03 (Tue, late night): Session 15, successes-only gallery; sprocket rebuild restored (counterparts v2)
+
+Brief: the user rejected the chipped cog sample (a declined broken part is not a demo) and asked for a homepage
+section of all successes, everything working and well reconstructed — plus a note teaching the Session 14 agent (sent
+via the peer channel, with the measurements below).
+
+**Done** (measured numbers in `docs/EVALUATION.md`, 2026-11-03 late-night entry)
+- ✅ **Counterpart relabelling v2** (`geometry/completion.py`): far-from-INFERRED + mirror-filled + mirror-ON-invented
+  (≤ 0.2 mm). Sprocket exposed 12.0 → 0.2 mm, rebuilds again; all committed guards still reject; torn-gasket
+  approximation unchanged. Plus loud `HOLES_UNPAIRED` warnings so no partial passes silently.
+- ✅ **Cog honestly out**: rough chip declines (ragged edge exceeds exact cover), smooth chip turns invisible
+  (matches its mirror, invents nothing) — measured both. Files in gitignored `tmp/declined_samples/`; a
+  diameter-style cog break would rebuild (same mechanism as the sprocket) if a 5th sample is ever wanted.
+- ✅ **Gallery of 4** (`assets/samples/`, bundler takes `--tests/--wanteds/--composites`): broken flange (rendered,
+  rebuilt), broken + intact sprocket (user photos, restored with permission), square gasket (Commons, measured).
+  Flange and gasket bytes md5-identical. CREDITS.md covers Commons + user-provided + rendered honestly.
+- ✅ **Tests:** API test pins the 4 ids, runs gasket (intact, 9 holes) AND sprocket (rebuild, < 0.1 mm caliper) end
+  to end; full suite 172 green; ruff clean; frontend builds. Homepage section reframed as successes with credit lines.
+- ✅ **Verified live** (SAM 3.1 + Spark 1.3): broken sprocket rebuilt 68.864 × 69.819 ($0.0225), intact measured with
+  nothing rebuilt ($0.0219), carrier refused a stable third time. Ledger total $1.92 of $150.
+- ✅ **Docs:** EVALUATION (new entry), PROGRESS, DEMO_SCRIPT, SUBMISSION, README figures updated.
+
+**Open**
+- 🟡 Small parts (below ~40 mm) with half missing still decline via the 20 mm counterpart gate — safe by design.
+- 🟡 Small ragged chips (cog-style) decline: below the mirror's exact-cover ability, documented.
+- 🟡 AT-3 width re-measurement still pending; unchanged.
+
+**Next**
+- **The user:** commit and push, make the repository public, record the video (`docs/DEMO_SCRIPT.md`), fill the form
+  (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (night) — 20 verified samples ✅
+
+**Done**
+- ✅ **Wave-1 rendered (9)**: bracket/washer/link/l-plate/flange/bumper/alink cases, all live-verified (model, right rebuilt flags).
+- ✅ **Wave-2 rendered (6)**: intact flange, mounting flange, bumper + broken adjuster link, shim, broken shim — new `broken_link`/`shim`/`broken_shim` builders; all live ✅ (errors ≤ 0.022 mm). Breaks cut past the last hole (both holes pin the mirror).
+- ✅ **Green Commons gasket**: live ✅ ("circular flange gasket"), 5/5 circles, bundled.
+- ✅ **Honest drops**: blue gasket (streak), beige Pakking (mirror shadow / cropped-photo read), carrier (3D, Spark refuses correctly). Tmp quota: every user photo inventoried, only the 2 sprockets qualify → 2/20 (10 %), documented in EVALUATION.
+- ✅ **Bundle 20** (`assets/samples/samples.json`), API test green, gallery shows all, suite 172 passed, ruff clean, frontend builds.
+
+**Open**
+- 🟡 Small-part counterpart gate + ragged-chip limits unchanged (safe by design).
+- 🟡 AT-3 re-measure pending; `docs/media/` screenshots stale.
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (dawn) — 24 samples, 25 % user photos ✅
+
+**Done**
+- ✅ **Tmp quota 6/24**: heart intact + broken (user photo, caliper 51.8 mm), heart 2nd shot, sprocket 2nd break — all live ✅ (Δ ≤ 0.06 mm, right rebuilt flags). Heart outlines symmetrised as cast (hand-finished trinket).
+- ✅ **Key honestly dropped**: Spark family verdict unstable across runs + SAM −0.9 mm on teeth; kept as builder job, not bundled.
+- ✅ **Pipeline untouched**: FRACTURE_CORRECTED retry prototyped then reverted (smoother chip sufficed; no honest synthetic trigger). Revert verified clean.
+- ✅ **Bundle 24**, suite 172 green, ruff clean, frontend builds. Gallery shows all.
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (morning): Session 16, deployment fix for medisadido.tech
+
+**Done**
+- 🟡 **Redirect loop diagnosed:** `/etc/nginx/sites-available/medisadido.tech` proxies `443 → http://127.0.0.1:80`, and port 80 on the same vhost answers `301 → https://…`, so the request loops until the browser gives up ("too many redirects"). The script was run with port `80`, which is never a valid proxy target.
+- ✅ **Correction (user): `medisadido.tech` is NOT Re-Forge** — Re-Forge stays on `reforge.adidomedis.cloud` (→ 8000). `medisadido.tech` must serve the portfolio, which is the PHP site in `/var/www/adidomedis.cloud` ("Juste-Medis ADIDO - AI Engineer"), via PHP-FPM 8.4 (verified active). Neither `~/portfolio/superforfive` (job pipeline) nor `p_etatdeslieux` (already served) is the target. New vhost config (PHP root, no proxy) given to the user in chat.
+- ✅ **Backend restarted anyway** (it was stopped, nothing on 8000): `uv run reforge-api` as `medis`, detached via `setsid`, log `/tmp/reforge-api.log`. `GET /api/health` → 200, key configured. Needed for `reforge.adidomedis.cloud`.
+- 📋 **Nginx rewrite needs root** (this session runs as `medis`, no sudo): config given to the user in chat, not yet applied.
+- ⛔ **Portfolio section abandoned:** staged in `/tmp/reforge_section/` (detail page, cards, screenshots, `apply.py`), then the user clarified the live URL belongs in the Re-Forge repo itself, not the portfolio. Nothing was written to `/var/www`.
+- ✅ **Live URL in the repo:** `https://reforge.adidomedis.cloud` added to `README.md` (top, verified: home 200, `AI ready`) and as a recording alternative in `docs/DEMO_SCRIPT.md`. No code change: the app needs no self-link, and the submission form has no live-URL field.
+
+**Next**
+- **The user (as root):** replace the `medisadido.tech` vhost with the PHP config, reload nginx, open https://medisadido.tech. Then commit/push, public repo, video, form by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (day): Session 17, tmp/realpicts tested, key blade demo added
+
+**Done**
+- ✅ **Raw probe:** 12/12 `tmp/realpicts` shots fail calibration with no mat (CAL_MARKERS_INSUFFICIENT, $0) — expected; only the flat panel filter and the key blade were compostable.
+- ✅ **Key blade admitted (25th sample):** uncut blank cropped from the fob shot, 50 mm CHOSEN; live SAM + Spark Δ −0.03/−0.06 mm, 0/0 holes. Tmp ratio now 7/25 = 28 %.
+- ⛔ **Panel filter honestly declined live:** Spark correctly reads a 30 mm pleated composite, not a flat plate. Dropped, documented.
+- ✅ **No pipeline change needed:** both live verdicts correct; suite 172 passed, ruff clean, frontend builds, gallery shows all 25.
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (day): Session 18, every breakable part broken (28 demos, 13 broken)
+
+**Done**
+- ✅ **3 broken twins admitted live:** washer rim segment (Δ0.002), slotted-link ear-tip (Δ0.045, 3/3), heart2 left-tip chip (tmp). New cases 30/31 + `heart2_broken` job.
+- ⛔ **Impossible by mirror, documented:** L-plate (no mirror axis), key blade (asymmetric blank). Intact demos stay: they prove nothing is invented.
+- ⛔ **Square gasket honestly unbreakable:** traced holes don't pair (corner tear restores the outline but not the passage); hole-free chips ≤2.4 mm drown in grain (AXIS_WEAK). Job removed, files cleaned, boundary in EVALUATION.
+- ✅ **No pipeline change:** the diagonal machinery was already correct (A1 at 100 %); traced-hole inference is scoped future work, not a deadline-day rush. Suite 172 passed, ruff clean, frontend builds, gallery shows all 28 (tmp 28.6 %).
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (day): Session 19, ruler mode, 8 .casse declined honestly, hero = real sprocket
+
+**Done**
+- ✅ **Ruler mode (mat optional, 🟡):** `known_length_mm` through pipeline + API + CLI + frontend (checkbox + input); top-down assumed ≤10°, widened budget, mode-aware messages, `mode` in report. 3 maintained tests; synthetic bracket recovers 80/28.
+- ⛔ **8 .casse all declined live:** full pipeline attempted (SAM segs + silhouette measured + Spark reads incl. damage); every one is a genuinely 3D part. Verdicts + reasons in EVALUATION. Nothing admitted — 0 demo invented.
+- ✅ **Removals as asked:** bracket, broken-bracket-black, adjuster-link + 6 more intact synthetics with broken twins (washer, slotted-link, flange, mounting-flange, bumper-bracket, shim) → 19 samples (12 broken, 7 intact), tmp 42 %. Files moved to `tmp/samples_removed`; stories de-dangled.
+- ✅ **Hero = real case:** broken sprocket user photo, actual live output (blue measured + orange 663 mm² rebuilt + mirror axis), readout + caption + CREDITS updated; gasket hero retired.
+- ✅ **Suite 175 passed, ruff clean, frontend builds, gallery shows 19.** PLAN.md scope synced (ruler mode 🟡).
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+- **To get more REAL demos:** photograph real FLAT broken parts (a snapped flat bracket, a torn flat gasket, a broken shim/clip) — 3D parts (wheels, shocks, springs, plugs) can never rebuild from one photo.

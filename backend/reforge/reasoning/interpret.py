@@ -56,6 +56,7 @@ class InterpretationRequest:
     hole_ids: list[str]
     segment_kinds: dict[str, str] = field(default_factory=dict)  # for the geometric rule only; never sent to a model
     rebuild_ok: dict[str, bool] = field(default_factory=dict)  # trial rebuild on the irregular segments; rule only
+    axis_fracture_sets: dict[str, tuple[str, ...]] = field(default_factory=dict)  # rough mismatch per axis; rule only
 
 
 @dataclass(frozen=True)
@@ -144,16 +145,24 @@ class GeometricInterpreter:
     method = "geometric-rule"
 
     async def interpret(self, req: InterpretationRequest) -> Interpretation:
-        fracture = [sid for sid in req.seg_ids if req.segment_kinds.get(sid) == "irregular"]
+        shared = tuple(sid for sid in req.seg_ids if req.segment_kinds.get(sid) in ("irregular", "broken"))
+        if req.axis_fracture_sets:
+            sets = {aid: tuple(req.axis_fracture_sets.get(aid, ())) for aid in req.axis_ids}
+        else:  # requests built without per-axis sets (older tests): one global set from the kinds
+            sets = dict.fromkeys(req.axis_ids, shared)
         axes = {a["id"]: a for a in req.facts.get("mirror_axes", [])}
         usable = [aid for aid in req.axis_ids
                   if axes[aid]["support"] >= MIN_AXIS_SUPPORT and axes[aid]["holes_contradicting"] == 0]
-        # Only axes whose trial rebuild covers the whole break and is confirmed by enough outline (the checks every
-        # interpreter's choice must pass afterwards); among them, the most holes matched, then the most material
-        # rebuilt (a crosswise axis maps the break onto itself and rebuilds almost nothing).
-        trusted = [aid for aid in usable if req.rebuild_ok.get(aid, True)]
+        # Only axes with fracture evidence whose trial rebuild covers the whole break and is confirmed by enough
+        # outline (the checks every interpreter's choice must pass afterwards); among them, the most holes matched,
+        # then the most material rebuilt (a crosswise axis maps the break onto itself and rebuilds almost nothing).
+        trusted = [aid for aid in usable if sets[aid] and req.rebuild_ok.get(aid, True)]
         axis = max(trusted, key=lambda aid: (axes[aid]["holes_matched"], axes[aid]["mirror_would_add_mm2"],
-                                             axes[aid]["support"])) if fracture and trusted else NONE_ID
+                                             axes[aid]["support"])) if trusted else NONE_ID
+        # Without a trusted axis the fracture is informative only: every break-labelled segment, whether or not an
+        # axis claimed it (with no candidates at all the per-axis sets are empty but the kinds still speak).
+        fracture = (list(sets[axis]) if axis != NONE_ID
+                    else sorted({sid for s in sets.values() for sid in s} | set(shared)))
         if axis != NONE_ID:
             reason = ("geometric rule: a well-supported axis whose trial rebuild covers the break; most holes matched, "
                       "then most material rebuilt")
@@ -169,7 +178,8 @@ class GeometricInterpreter:
             "object_name": "part", "family": "extruded_profile",
             "family_reason": "geometric rule: a single top-view outline is always treated as an extruded profile",
             "is_broken": bool(fracture), "fracture_segment_ids": fracture,
-            "fracture_reason": "geometric rule: segments made of many short pieces (irregular)",
+            "fracture_reason": ("geometric rule: segments made of many short pieces (irregular), or not matching "
+                                "their mirror image (broken)"),
             "symmetry": "mirror" if axis != NONE_ID else "unsure", "mirror_axis_id": axis,
             "symmetry_reason": reason,
             "holes": [{"hole_id": h, "role": "unknown"} for h in req.hole_ids],

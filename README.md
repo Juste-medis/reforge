@@ -10,14 +10,18 @@ written during the hackathon**, starting after the kickoff on 26 Oct 2026, 17:00
 
 > ⚠️ A reconstruction is not a verified replacement part. Check it before you rely on it. Not for safety-critical use.
 
+**Live demo:** https://reforge.adidomedis.cloud — the deployed instance. No mat printed yet? Open **Examples** on the home page and run one without uploading anything.
+
 ![Re-Forge home page](docs/media/ui-home.png)
 
 ## What you get
 
 | | |
 |---|---|
-| ![A rebuilt bracket: verdict, 3D model with dimensions, before/after slider](docs/media/ui-result.png) | ![What was measured, what was rebuilt, and what to check before printing](docs/media/ui-result-evidence.png) |
-| A broken bracket, rebuilt. The orange end is mirrored from the intact one. *(Synthetic example image.)* | Every dimension with its source and a modelled ±U. The export waits for you to review anything uncertain. |
+| ![A broken flange rebuilt: verdict, photo-textured 3D model with dimensions, before/after slider](docs/media/ui-result.png) | ![A real gasket measured: 9 holes traced, nothing invented](docs/media/ui-result-gasket.png) |
+| A broken flange, rebuilt: the photographed part keeps its texture in 3D, the rebuilt side is orange. *(Rendered example.)* | A real gasket, measured: the bore and eight passages traced, nothing invented. *(Real photo, composited on the mat.)* |
+| ![What was measured, what was rebuilt, and what to check before printing](docs/media/ui-result-evidence.png) | ![The examples: real photos of real parts, credited](docs/media/ui-evidence-legend.png) |
+| Every dimension with its source and a modelled ±U. The export waits for you to review anything uncertain. | Examples you can run without a mat, with the photo's author and licence. |
 
 - **True millimetres.** A printed mat with 12 ArUco markers calibrates the photo. A leave-one-out residual reports how
   well, and two 100 mm bars let you check the print scale with a caliper.
@@ -35,8 +39,12 @@ written during the hackathon**, starting after the kickoff on 26 Oct 2026, 17:00
 - **Files you can use.**
   - `model.stl` for your slicer.
   - `model.scad`: OpenSCAD source, with every dimension a named value commented with its evidence.
+  - `model.dxf` (R12, mm) and `model.svg` (true size): the flat pattern for parts cut from sheet, such as a gasket or
+    a shim, for a laser, a waterjet, a CNC router or a cutting plotter.
   - `report.json`: the evidence for every number.
-  - An optional hole allowance rebuilds and re-validates both model files.
+  - An optional hole allowance rebuilds and re-validates every model file.
+- **The real part in 3D.** The preview wears the part's own photo on its top face, and its measured colour on the
+  walls. Rebuilt material is shown orange, so it never passes for photographed.
 - **No fake progress.** The progress view shows the pipeline's real stage events and their measured durations.
 
 ## Status (honest labels)
@@ -45,13 +53,13 @@ written during the hackathon**, starting after the kickoff on 26 Oct 2026, 17:00
 
 | Status | Items |
 |---|---|
-| ✅ | Calibration with a residual and a leave-one-out residual; sub-pixel edge refinement; holes; height (parallax) correction; PartSpec; CAD build (manifold3d); mesh and printability validation; STL and OpenSCAD export; CLI; HTTP API with background jobs and real stage progress; web UI |
-| ✅ live, synthetic images | SAM 3.1 segmentation and Muse Spark interpretation via the Meta Model API. On the 3 bundled examples (2026-11-03): sizes within 0.04 mm of the known truth, and the broken flange's two lost holes inferred at Ø 5.495 and 5.497 mm against 5.5 |
+| ✅ | Calibration with a residual and a leave-one-out residual; sub-pixel edge refinement; holes; height (parallax) correction; PartSpec; CAD build (manifold3d); mesh and printability validation; STL, OpenSCAD, DXF and SVG export (the DXF is read back by ezdxf in the tests); CLI; HTTP API with background jobs and real stage progress; web UI with a photo-textured 3D preview |
+| ✅ live, examples | SAM 3.1 segmentation and Muse Spark interpretation via the Meta Model API, on the bundled examples (2026-11-03, `docs/EVALUATION.md`). A real gasket photo, composited at a known size: measured within 0.012 mm, 9 holes, nothing invented, even when Spark once claimed a break. A real broken sprocket: missing half rebuilt, within 0.18 mm live (0.08 mm offline). A rendered broken flange: rebuilt within 0.015 mm, its two lost holes inferred at Ø 6.497 and 6.495 mm against 6.5 |
 | ✅ verified with OpenSCAD itself | The exported `.scad` compiles in OpenSCAD (WASM build) into a watertight solid whose volume matches the STL within 4 × 10⁻⁶, holes compensated or not (`backend/tools/check_exports.py`) |
 | 🟡 one real part | A stamped-metal heart on the printed mat: height within +0.31 / +0.41 mm of a caliper reading. The width reading (53 mm, no decimals) disagrees by about −1 mm and is being re-measured |
 | 🟡 modelled | The ±U uncertainties are an error budget computed per photo. Their coverage against caliper readings has only been checked on that one real part |
 | 📋 | Caliper overrides of single dimensions in the UI, multi-photo fusion, side views for 3D parts |
-| ⛔ | Rounded, hollow or 3D parts, threads, multi-thickness parts, safety-critical parts |
+| ⛔ | Rounded, hollow or 3D parts, threads, multi-thickness parts, safety-critical parts. Broken toothed outlines (gears, sprockets): measured, never rebuilt, because intact teeth facing the gap can't be told from the fracture |
 
 Measured numbers, with their dates and conditions, are in [`docs/EVALUATION.md`](docs/EVALUATION.md). Nothing in this
 README is a claim beyond what is measured there.
@@ -67,8 +75,10 @@ cd backend && uv sync && uv run reforge-api
 # open http://127.0.0.1:8000
 ```
 
-No mat printed yet? Open **Examples** on the home page. Those images are synthetic: rendered parts shot by a
-simulated phone camera, so their true size is known. They run through the full pipeline.
+No mat printed yet? Open **Examples** on the home page: 19 demos, broken and intact, each placed on a rendered
+mat at a known size, so you can compare with the truth. Real part photos (Wikimedia Commons, credited in the app, or
+supplied by the user and marked as such) sit next to rendered parts (labelled "Rendered example"). All run through
+the full pipeline. No printer at all? Tick "My photo has no mat" and enter one measured length instead.
 
 **Docker** (one container, the API and the UI on port 8000):
 
@@ -102,7 +112,8 @@ credits.
 4. **Analyse.** About half a minute with AI (24–40 s measured on the examples), a few seconds without.
 5. **Review.** Use the 3D view, the before/after slider (photo against what was built), the evidence list and the
    "Before you print" checklist. Anything uncertain must be acknowledged before the files unlock.
-6. **Download** the STL (slicer), the `.scad` (editable) or the report. Print one piece and test the fit first.
+6. **Download** the STL (slicer), the `.scad` (editable), the DXF or SVG (cutting), or the report. Print or cut one
+   piece and test the fit first.
 
 Past repairs are listed under **My repairs** (kept in this browser only). **Show technical details** reveals the
 calibration, the AI reading with the marked image it answered on, the uncertainty budget, the validation checks, the
@@ -137,8 +148,8 @@ Details and decisions: [`docs/PLAN.md`](docs/PLAN.md).
 | `GET /api/health` | Whether AI is configured, the model ids, and today's spend against the cap |
 | `POST /api/jobs` | Multipart form: one of `photo` (file), `sample` (example id) or `from_job` (re-run a stored photo), plus `thickness_mm`, optional `bar_x_mm`/`bar_y_mm`, `segmenter` (`sam`\|`classical`), `interpreter` (`spark`\|`geometric`), `prompt`, and `wait` (`false` answers `202` with the job id at once) |
 | `GET /api/jobs/{id}` | `queued`/`running` with the real stage events, then `done` with the report and file URLs, or `failed` with a typed error |
-| `GET /api/jobs/{id}/{file}` | `model.stl`, `model.scad`, `spec.json`, `report.json`, `photo.jpg`, `overlay.png`, `setofmark.png`. For the model files, `?hole_offset_mm=0.2` rebuilds and re-validates with a printer compensation |
-| `GET /api/samples` | The bundled example photos, each labelled synthetic, with their known truth |
+| `GET /api/jobs/{id}/{file}` | `model.stl`, `model.scad`, `model.dxf`, `model.svg`, `spec.json`, `report.json`, `photo.jpg`, `texture.jpg`, `overlay.png`, `setofmark.png`. For the model files, `?hole_offset_mm=0.2` rebuilds and re-validates with a printer compensation |
+| `GET /api/samples` | The bundled examples, each labelled for what it is (a composite of a credited real photo, or a rendered part), with their known truth |
 | `GET /api/mat/{A4\|Letter}.pdf` | The printable mat |
 
 Uploads are capped at 20 MB and 40 megapixels. They are decoded and re-encoded before anything else, so no EXIF or GPS
@@ -184,6 +195,8 @@ tools/scad-check/  OpenSCAD (WASM) compiler used to verify the .scad exports
   wrong picks, but a run can still end "not rebuilt" where another run rebuilds.
 - Shiny or textured metal can confuse the outline; SAM 3.1 copes better than the no-AI fallback, which can trace cast
   shadows.
+- A broken gear or sprocket is measured but never rebuilt; see the status table.
+- A pale part on the white mat (colour difference below about ΔE 25) traces its holes too roughly to fit circles.
 - HEIC uploads aren't decoded. Job files stay on the server until deleted (no automatic retention yet).
 - The mat must be printed at 100 %. "Fit to page" breaks the assumed scale unless the bars are measured.
 
@@ -199,5 +212,9 @@ tools/scad-check/  OpenSCAD (WASM) compiler used to verify the .scad exports
 ## Licence
 
 Apache License 2.0: see `LICENSE` and `NOTICE`. Third-party packages keep their own licences, listed in
-`THIRD_PARTY_NOTICES.md`. The bundled Inter font is under the SIL Open Font License 1.1. SAM 3.1 and Muse Spark are
+`THIRD_PARTY_NOTICES.md`. The bundled Inter font is under the SIL Open Font License 1.1.
+
+The example images are not under Apache-2.0: they follow their source photos' licences (CC BY-SA 3.0, or public
+domain), with authors and changes in `assets/samples/CREDITS.md`. The same applies to the two hero images, credited in
+`frontend/public/hero/CREDITS.md`. SAM 3.1 and Muse Spark are
 used through the Meta Model API under Meta's terms; no model weights are included.

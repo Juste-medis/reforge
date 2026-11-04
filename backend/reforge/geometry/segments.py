@@ -38,7 +38,8 @@ class Segment:
     seg_id: str
     start: int  # first point index (inclusive)
     end: int  # last point index (inclusive); segments tile the outline in order
-    kind: str  # "line" | "arc" | "irregular"
+    kind: str  # "line" | "arc" | "irregular" from the decomposer; the mirror pass re-decides "irregular"
+    # into "broken" (mismatching the mirror) or "pattern" (matching it: moulded teeth, knurling)
     length_mm: float
     pieces: int
     fit_rms_mm: float  # residual of the best single line or circle over the whole segment

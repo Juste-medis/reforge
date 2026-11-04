@@ -42,6 +42,8 @@ export function NewRepair({ health }: { health: Health | null | undefined }) {
   const [thickness, setThickness] = useState("");
   const [barX, setBarX] = useState("");
   const [barY, setBarY] = useState("");
+  const [noMat, setNoMat] = useState(false);
+  const [knownLength, setKnownLength] = useState("");
   const ai = defaultAi(health);
   const [segmenter, setSegmenter] = useState<"sam" | "classical">(ai.segmenter);
   const [interpreter, setInterpreter] = useState<"spark" | "geometric">(ai.interpreter);
@@ -86,8 +88,10 @@ export function NewRepair({ health }: { health: Health | null | undefined }) {
   const t = Number(thickness);
   const thicknessError = thickness === "" ? "Enter the part's thickness." : !(t > 0.4 && t <= 200) ? "Between 0.5 and 200 mm." : null;
   const barError = (v: string) => (v === "" ? null : !(Number(v) >= 90 && Number(v) <= 110) ? "A bar reads about 100 mm. Leave empty if not measured." : null);
+  const kl = Number(knownLength);
+  const lengthError = !noMat ? null : knownLength === "" ? "Measure the part's longest side." : !(kl > 0 && kl <= 5000) ? "Between 0 and 5000 mm." : null;
   const photoBad = checks.some((c) => c.level === "bad");
-  const canSubmit = !!file && !photoBad && !thicknessError && !barError(barX) && !barError(barY) && !busy;
+  const canSubmit = !!file && !photoBad && !thicknessError && !lengthError && (noMat || (!barError(barX) && !barError(barY))) && !busy;
 
   function pick(files: FileList | null) {
     const f = files?.[0];
@@ -112,8 +116,9 @@ export function NewRepair({ health }: { health: Health | null | undefined }) {
     try {
       await launch({ photo: file }, {
         thickness_mm: t,
-        bar_x_mm: barX ? Number(barX) : undefined,
-        bar_y_mm: barY ? Number(barY) : undefined,
+        bar_x_mm: !noMat && barX ? Number(barX) : undefined,
+        bar_y_mm: !noMat && barY ? Number(barY) : undefined,
+        known_length_mm: noMat ? kl : undefined,
         segmenter, interpreter, prompt: prompt.trim() || "plastic part",
       }, file.name.replace(/\.[^.]+$/, "") || "My part", preview ?? undefined);
     } catch (err) {
@@ -172,6 +177,30 @@ export function NewRepair({ health }: { health: Health | null | undefined }) {
               No mat yet? Print it at 100 %: <a href="/api/mat/A4.pdf" download>A4</a> · <a href="/api/mat/Letter.pdf" download>Letter</a>.
               Your photo is re-encoded without its location data before anything else happens.
             </p>
+            <div className="choice">
+              <label>
+                <input type="checkbox" checked={noMat} onChange={(e) => setNoMat(e.target.checked)} />
+                <span><strong>My photo has no mat.</strong> <span className="muted">I measured the part's longest side instead.</span></span>
+              </label>
+            </div>
+            {noMat && (
+              <>
+                <p className="muted small">
+                  Photograph the whole part straight from above on a plain contrasting background, then enter its
+                  longest side, measured with a ruler or caliper. Numbers come out slightly looser than with the mat.
+                </p>
+                <label className="field">
+                  <span className="field-label">Longest side, measured</span>
+                  <span className="input-unit">
+                    <input type="number" inputMode="decimal" step="0.1" min="1" max="5000" value={knownLength}
+                           onChange={(e) => setKnownLength(e.target.value)} onBlur={() => setTouched(true)}
+                           placeholder="e.g. 80.0" aria-invalid={touched && !!lengthError} aria-describedby="len-err" />
+                    <span aria-hidden="true">mm</span>
+                  </span>
+                </label>
+                {touched && lengthError && <p className="field-error" id="len-err" role="alert">{lengthError}</p>}
+              </>
+            )}
           </section>
 
           <section className="panel" aria-labelledby="thick-title">
@@ -194,6 +223,7 @@ export function NewRepair({ health }: { health: Health | null | undefined }) {
             {touched && thicknessError && <p className="field-error" id="thick-err" role="alert">{thicknessError}</p>}
           </section>
 
+          {!noMat && (
           <details className="panel disclosure">
             <summary>
               <span className="panel-num panel-num-soft">+</span>
@@ -229,6 +259,7 @@ export function NewRepair({ health }: { health: Health | null | undefined }) {
               </div>
             </div>
           </details>
+          )}
 
           <details className="panel disclosure">
             <summary>

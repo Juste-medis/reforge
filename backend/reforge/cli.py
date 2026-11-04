@@ -41,7 +41,7 @@ def _run(args: argparse.Namespace) -> int:
     out = args.output or get_settings().reforge_data_dir / "jobs" / job_id
     report = asyncio.run(photo_to_stl(args.photo, out, args.thickness, segmenter, bar_x_mm=args.bar_x,
                                       bar_y_mm=args.bar_y, job_id=job_id, focal_35mm=args.focal_35mm,
-                                      interpreter=interpreter))
+                                      interpreter=interpreter, known_length_mm=args.known_length))
     summary = {k: report[k] for k in ("segmentation", "pose", "height_correction", "part", "timings_s")}
     recon = report["reconstruction"]
     summary["reconstruction"] = {"interpretation": {k: recon["interpretation"][k] for k in
@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--thickness", type=float, required=True, help="caliper thickness in mm")
     run.add_argument("--bar-x", type=float, default=None, help="caliper reading of the horizontal 100 mm bar")
     run.add_argument("--bar-y", type=float, default=None, help="caliper reading of the vertical 100 mm bar")
+    run.add_argument("--known-length", type=float, default=None,
+                     help="ruler mode (no mat): the part's longest side in mm, measured with a ruler")
     run.add_argument("--segmenter", choices=["sam", "classical"], default="sam")
     run.add_argument("--prompt", default="plastic part", help="SAM 3.1 noun phrase")
     run.add_argument("--point", default=None, help="SAM point prompt 'x,y' in rectified-view pixels")

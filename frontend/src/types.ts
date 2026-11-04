@@ -8,8 +8,10 @@ export interface Issue {
 }
 
 export interface Calibration {
+  mode?: "mat" | "ruler"; // absent on reports from before ruler mode: they are mat jobs
   page: string;
   markers: number;
+  known_length_mm?: number | null;
   fit_rms_mm: number;
   loo_rms_mm: number | null;
   px_per_mm: number;
@@ -203,6 +205,14 @@ export interface Report {
   reconstruction: Reconstruction;
   part: Part;
   confidence: Confidence;
+  texture?: {
+    image: string;
+    size_px: [number, number];
+    u: [number, number, number];
+    v: [number, number, number];
+    photographed_outline_mm: [number, number][];
+    colour_hex: string;
+  };
   validation: Validation;
   timings_s: Record<string, number>;
   outputs: string[];
@@ -211,12 +221,24 @@ export interface Report {
 
 export type Files = Record<string, string>;
 
+export interface Credit {
+  title: string;
+  author: string;
+  licence: string;
+  licence_url: string;
+  page: string;
+}
+
 export interface Sample {
   id: string;
   title: string;
   story: string;
   thickness_mm: number;
   kind: "synthetic";
+  /** A rendered part with no source photo; otherwise a real photo of a real part, composited onto the mat. */
+  rendered?: boolean;
+  credit?: Credit;
+  provided_by?: string;
   label: string;
   image_url: string;
   thumb_url: string;
@@ -224,7 +246,7 @@ export interface Sample {
     basis: string;
     length_mm: number;
     width_mm: number;
-    holes: { diameter_mm?: number; slot_mm?: [number, number]; count: number }[];
+    holes: { diameter_mm?: number; slot_mm?: [number, number]; shape?: string; count: number }[];
     photographed: string;
   };
 }
@@ -280,6 +302,7 @@ export interface JobOptions {
   thickness_mm: number;
   bar_x_mm?: number;
   bar_y_mm?: number;
+  known_length_mm?: number;
   segmenter: "sam" | "classical";
   interpreter: "spark" | "geometric";
   prompt: string;

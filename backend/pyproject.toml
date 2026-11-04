@@ -51,6 +51,7 @@ select = ["E", "F", "W", "I", "B", "UP", "NPY"]
 
 [dependency-groups]
 dev = [
+    "ezdxf==1.4.5",
     "pypdfium2>=5.14.0",
     "pytest>=9.1.1",
     "ruff>=0.17.2",

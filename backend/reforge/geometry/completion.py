@@ -29,6 +29,12 @@ OPENING_MM = 0.1  # drops slivers between a side and its slightly imperfect mirr
 CLOSING_MM = 0.05  # seals hairline gaps along the fracture after the union
 RUN_SPACING_MM = 0.25
 ON_EDGE_MM = 0.05
+FAR_FROM_INVENTED_MM = 20.0  # across the part from the invented outline (a sprocket's counterpart teeth bottom out
+# at 34 mm from it; a real gap runs alongside it — a flange's missed corner peaks at 10 mm — measured 2026-11-03)
+MIRROR_ON_INVENTED_MM = 0.2  # ... and its mirror must lie ON the invented outline, not deep inside the fill: a
+# counterpart's mirror is the missing outline itself (0.04 mm off, measured); a wrong axis drops the mirror inside
+# (millimetres deep). Millimetre-scale accidental tangencies can only leak millimetres, never a whole tear.
+
 
 
 @dataclass(frozen=True)
@@ -143,8 +149,12 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
     on_fracture = (shapely.distance(fracture, shapely.points(pts)) <= ON_EDGE_MM if fracture is not None
                    else np.zeros(len(pts), dtype=bool))
     in_added = np.zeros(len(pts), dtype=bool)
+    mirror_in_added = np.zeros(len(pts), dtype=bool)
+    mirrored_pts = shapely.points(axis.reflect(pts))
+    photo_pts = shapely.points(pts)
     for poly in filled:
-        in_added |= shapely.distance(poly, shapely.points(pts)) <= ON_EDGE_MM
+        in_added |= shapely.distance(poly, photo_pts) <= ON_EDGE_MM
+        mirror_in_added |= shapely.distance(poly, mirrored_pts) <= ON_EDGE_MM
     labels = segmented.labels()
     seg_tree = cKDTree(segmented.points)
     source_seg = labels[seg_tree.query(axis.reflect(pts))[1]]
@@ -159,6 +169,22 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
             keys.append(("INFERRED", segmented.segments[source_seg[i]].seg_id))
         else:
             keys.append(("UNCERTAIN", "junction between photographed and mirrored edges"))
+    # Second pass: counterparts are photographed, not uncertain. An intact span facing the gap mismatches its mirror
+    # (its partner is missing), so a diameter cut lands it in the fracture set — but its mirror is filled and it sits
+    # across the part from the invented outline (a real gap runs alongside it). Three gates: the span is far from any
+    # INFERRED point, its mirror is filled, and its mirror lies ON the invented outline rather than deep inside the
+    # fill (a wrong axis drops mirrors inside; accidental tangencies leak millimetres at most, never a whole tear).
+    # Relabelled points keep their photographed position: OBSERVED.
+    inferred_idx = np.flatnonzero([k[0] == "INFERRED" for k in keys])
+    if inferred_idx.size:
+        invented_tree = cKDTree(pts[inferred_idx])
+        dist_to_invented, _ = invented_tree.query(pts)
+        mirror_to_invented, _ = invented_tree.query(axis.reflect(pts))
+        for i in range(len(pts)):
+            if (keys[i][0] == "UNCERTAIN" and on_fracture[i] and mirror_in_added[i]
+                    and dist_to_invented[i] > FAR_FROM_INVENTED_MM
+                    and mirror_to_invented[i] <= MIRROR_ON_INVENTED_MM):
+                keys[i] = ("OBSERVED", "calibrated photo, refined boundary")
     runs = _runs(keys, axis)
 
     hole_checks, inferred, asymmetric = [], [], []
@@ -168,7 +194,7 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
         distance = float(np.hypot(partner[1][0] - image[0], partner[1][1] - image[1]))
         if distance <= max(TAU_MM, 0.25 * radius):
             hole_checks.append(HoleCheck(hid, partner[0], distance, 2 * abs(partner[2] - radius)))
-        elif any(poly.contains(Point(image).buffer(radius)) for poly in filled):
+        elif _lands_in_rebuild(Point(image).buffer(radius), filled, merged):
             inferred.append(InferredHole(hid, (float(image[0]), float(image[1])), float(radius)))
         elif observed.contains(Point(image)):
             asymmetric.append(hid)
@@ -176,6 +202,16 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
     confirmed = axis.matched_mm + sum(2 * np.pi * radius[h.hole_id] for h in hole_checks)
     return Completion(axis, pts, runs, tuple(regions), tuple(inferred), tuple(hole_checks), tuple(asymmetric),
                       float(confirmed))
+
+
+def _lands_in_rebuild(disc, filled: list, merged) -> bool:
+    """A mirrored hole belongs to the rebuild when it lies inside the completed part and in the added material, or
+    straddles the fracture into it: a hole the break cut in half leaves a notch the mirror fills, and the hole must
+    come back where the notch was, not as solid material (a broken cog's lightening holes, 2026-11-03)."""
+    if any(poly.contains(disc) for poly in filled):
+        return True
+    return merged.buffer(ON_EDGE_MM).contains(disc) and any(poly.intersection(disc).area > 0.2 * disc.area
+                                                            for poly in filled)
 
 
 def _runs(keys: list[tuple[str, str]], axis: MirrorAxis) -> tuple[Run, ...]:

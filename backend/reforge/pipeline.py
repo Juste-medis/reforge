@@ -24,13 +24,21 @@ from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
 from reforge.cad.build import build_part, write_stl
+from reforge.cad.flat import emit_dxf, emit_svg
 from reforge.cad.scad import emit_scad
-from reforge.capture.calibration import RectifiedView, calibrate, rectify
-from reforge.capture.pose import FULL_FRAME_DIAGONAL_MM, estimate_pose, focal_35mm_from_exif
+from reforge.capture.calibration import (
+    RULER_READING_REL,
+    RULER_TILT_REL,
+    RectifiedView,
+    calibrate,
+    rectify,
+    ruler_calibration,
+)
+from reforge.capture.pose import FULL_FRAME_DIAGONAL_MM, estimate_pose, focal_35mm_from_exif, ruler_pose
 from reforge.errors import ReforgeError
 from reforge.geometry.circle import fit_circle
 from reforge.geometry.completion import Completion
-from reforge.geometry.height import correct_height
+from reforge.geometry.height import HeightCorrection, correct_height
 from reforge.reasoning.interpret import GeometricInterpreter
 from reforge.reasoning.reconstruct import Reconstruction, reconstruct
 from reforge.spec.confidence import (
@@ -218,7 +226,7 @@ OVERLAY_WIDTH_PX = 1400
 
 
 def _overlay(view: RectifiedView, profile: RefinedProfile, footprint: RefinedProfile,
-             completion: Completion | None = None) -> tuple[np.ndarray, np.ndarray]:
+             completion: Completion | None = None) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float]]:
     """The rectified photo of the part, cropped and enlarged to about ``OVERLAY_WIDTH_PX`` (so lines stay sharp), and
     the same crop with what was measured drawn on it. Both share one framing, so the UI can compare them.
 
@@ -286,7 +294,39 @@ def _overlay(view: RectifiedView, profile: RefinedProfile, footprint: RefinedPro
     for h in footprint.holes:
         if not h.doubt:
             line(to_px(h.contour.points_mm), PROVENANCE_COLOURS["OBSERVED"])
-    return crop, out
+    return crop, out, (float(x0), float(y0), float(k))
+
+
+def _texture(view: RectifiedView, crop: np.ndarray, frame: tuple[float, float, float], footprint: RefinedProfile,
+             completion: Completion | None, seg: Segmentation) -> dict:
+    """How ``photo.jpg`` maps onto the model, for a photo-textured 3D preview: pixel (u, v) = u0 + a·x + b·y, v0 +
+    c·x + d·y for a model-frame point (x, y) in mm. Also the photographed footprint in the model frame (the rebuilt
+    material is what lies outside it) and the part's median colour, measured on the photo."""
+    x0, y0, k = frame
+    outer = completion.points if completion is not None else footprint.outer.points_mm
+    ox, oy = (outer.min(axis=0) + outer.max(axis=0)) / 2  # the model origin, as in profile_to_spec
+    s = view.px_per_mm
+    vx, vy = view.origin_mm
+    u0 = k * ((ox - vx) * s - x0)
+    v0 = k * ((oy - vy) * s - y0)
+    photographed = Polygon(mat_to_model(footprint.outer.points_mm, (ox, oy))).buffer(0).simplify(0.05)
+    inside = cv2.erode(seg.mask.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+    colour = np.median(view.image[inside], axis=0) if inside.any() else np.array([180, 180, 180])
+    b, g, r = (int(round(c)) for c in colour)
+    # The texture for the 3D preview: the photo where the part was photographed, ember wherever it wasn't (the rebuilt
+    # material), decided per pixel against the photographed outline, so no triangle can smear one into the other.
+    ring = np.round((view.mm_to_px(footprint.outer.points_mm) - [x0, y0]) * k).astype(np.int32)
+    seen = np.zeros(crop.shape[:2], np.uint8)
+    cv2.fillPoly(seen, [ring], 255, cv2.LINE_AA)
+    ember = np.zeros_like(crop)
+    ember[:] = (137, 176, 242)  # BGR of the UI's rebuilt tint
+    alpha = (seen.astype(np.float32) / 255.0)[..., None]
+    texture_image = np.clip(crop * alpha + ember * (1 - alpha), 0, 255).astype(np.uint8)
+    return {"image": "texture.jpg", "texture_bgr": texture_image, "size_px": [int(crop.shape[1]), int(crop.shape[0])],
+            "u": [round(u0, 3), round(k * s, 6), 0.0], "v": [round(v0, 3), 0.0, round(-k * s, 6)],
+            "photographed_outline_mm": [[round(float(x), 3), round(float(y), 3)]
+                                        for x, y in np.asarray(photographed.exterior.coords)[:-1]],
+            "colour_hex": f"#{r:02x}{g:02x}{b:02x}"}
 
 
 def _reconstruction_report(recon: Reconstruction) -> dict:
@@ -374,12 +414,18 @@ def _confidence_report(spec: PartSpec, budget: ErrorBudget, completion: Completi
 async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmenter: Segmenter, *,
                        bar_x_mm: float | None = None, bar_y_mm: float | None = None,
                        thickness_uncertainty_mm: float = CALIPER_UNCERTAINTY_MM, job_id: str | None = None,
-                       focal_35mm: float | None = None, interpreter=None, progress: Progress | None = None) -> dict:
+                       focal_35mm: float | None = None, interpreter=None, progress: Progress | None = None,
+                       known_length_mm: float | None = None) -> dict:
     """``focal_35mm`` is the photo's EXIF focal length (35 mm equivalent). When it isn't given, it's read from the
     photo file itself; uploads pass it explicitly because they're re-encoded without metadata.
 
     ``interpreter`` reads the part for the reconstruction: ``SparkInterpreter`` (Muse Spark) or, by default, the
-    ``GeometricInterpreter`` rule (not AI). ``progress`` is called as each of ``STAGES`` starts and ends."""
+    ``GeometricInterpreter`` rule (not AI). ``progress`` is called as each of ``STAGES`` starts and ends.
+
+    ``known_length_mm`` is ruler mode: no mat. The photo must show the part from above on a plain background, and
+    the value must be the part's longest side in mm, measured with a ruler or caliper. The outline's longest
+    pixel side carries that length; tilt is assumed within ~10° of top-down and covered by a widened uncertainty.
+    Ruler mode never attempts the markers, even if a mat happens to be visible."""
     interpreter = interpreter or GeometricInterpreter()
     timings: dict[str, float] = {}
     current: dict[str, object] = {}
@@ -402,33 +448,71 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
     if focal_35mm is None:
         focal_35mm = focal_35mm_from_exif(photo.read_bytes())
     end()
-    begin("calibrate_rectify")
+    ruler = known_length_mm is not None
+    if ruler and (not np.isfinite(known_length_mm) or known_length_mm <= 0):
+        raise ReforgeError("RULER_LENGTH_INVALID", f"Enter the measured length in mm (got {known_length_mm}).",
+                           "Ruler mode needs the part's longest side, measured with a ruler or caliper.")
+    if ruler:
+        # Ruler mode: segment first in pixels (the outline's longest side carries the entered length), then scale.
+        # The segmentation mask is scale-free; only the morphology kernels assume a scale, and refinement re-derives
+        # every boundary with the true one.
+        begin("segment")
+        seg = await segmenter.segment(RectifiedView(image=image, px_per_mm=1.0, origin_mm=(0.0, 0.0)))
+        end()
+        begin("calibrate_rectify")
 
-    def _calibrate() -> tuple:
-        cal = calibrate(image, bar_x_mm=bar_x_mm, bar_y_mm=bar_y_mm)
-        return cal, rectify(image, cal)
+        def _scale() -> tuple:
+            ys, xs = np.nonzero(seg.mask)
+            span_px = float(max(xs.max() - xs.min(), ys.max() - ys.min())) if len(xs) else 0.0
+            cal = ruler_calibration((image.shape[1], image.shape[0]), span_px / known_length_mm, known_length_mm)
+            return cal, RectifiedView(image=image, px_per_mm=cal.px_per_mm, origin_mm=(0.0, 0.0))
 
-    cal, view = await asyncio.to_thread(_calibrate)
-    end()
-    begin("segment")
-    seg = await segmenter.segment(view)
-    end()
+        cal, view = await asyncio.to_thread(_scale)
+        end()
+    else:
+        begin("calibrate_rectify")
+
+        def _calibrate() -> tuple:
+            cal = calibrate(image, bar_x_mm=bar_x_mm, bar_y_mm=bar_y_mm)
+            return cal, rectify(image, cal)
+
+        cal, view = await asyncio.to_thread(_calibrate)
+        end()
+        begin("segment")
+        seg = await segmenter.segment(view)
+        end()
     begin("refine")
-    profile = await asyncio.to_thread(refine_profile, view, seg.mask)
+    profile = await asyncio.to_thread(refine_profile, view, seg.mask, on_mat=not ruler)
     end()
     if profile.trace_share is not None and profile.trace_share < MIN_TRACE_SHARE:
+        where = "on the mat" if not ruler else "in the photo"
         raise ReforgeError(
             "TRACE_PARTIAL",
-            f"The traced outline covers only {profile.trace_share:.0%} of what's on the mat, so it's a fragment of a "
+            f"The traced outline covers only {profile.trace_share:.0%} of what's {where}, so it's a fragment of a "
             "larger or multi-coloured object, not a part outline. No model was built.",
-            "Photograph one flat, single-colour part alone in the mat's free zone.")
+            "Photograph one flat, single-colour part alone in the mat's free zone."
+            if not ruler else "Photograph one flat, single-colour part alone on a plain background.")
     begin("pose_height")
 
     def _pose_height() -> tuple:
         pose = estimate_pose(cal, focal_35mm)
         return pose, correct_height(profile, pose, thickness_mm, round_max_deviation_mm=ROUND_HOLE_MAX_DEVIATION_MM)
 
-    pose, height = await asyncio.to_thread(_pose_height)
+    def _ruler_pose_height() -> tuple:
+        # No height correction: the scale already lives at the part's top face, and for a flat part that face IS
+        # the footprint (up to tilt). The unknown tilt and the thickness parallax go into the uncertainty instead.
+        pts = profile.outer.points_mm
+        centre = (float(pts[:, 0].mean()), float(pts[:, 1].mean()))
+        extent = float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1])))
+        pose = ruler_pose(focal_35mm, cal.image_size, cal.px_per_mm, centre, extent, thickness_mm)
+        radial = float(np.hypot(pts[:, 0] - centre[0], pts[:, 1] - centre[1]).max())
+        parallax = thickness_mm / pose.height_mm * radial
+        u_2sigma = 2.0 * float(np.hypot(RULER_TILT_REL * extent, parallax))
+        height = HeightCorrection(profile=profile, magnification=1.0, max_shift_mm=0.0, u_persp_mm=u_2sigma,
+                                  occlusion_bound_mm=float(parallax))
+        return pose, height
+
+    pose, height = await asyncio.to_thread(_ruler_pose_height if ruler else _pose_height)
     end()
     begin("interpret_reconstruct")
     recon = await reconstruct(view, height.profile, interpreter, thickness_mm=thickness_mm)
@@ -441,13 +525,17 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
             f"{recon.interpretation.method} reads this as {analysis.object_name!r} "
             f"({analysis.family.replace('_', ' ')}): {analysis.family_reason}"[:400],
             "RE-FORGE rebuilds flat parts of uniform thickness, photographed from above on the mat. No model was "
-            "built.")
+            "built." if not ruler else
+            "RE-FORGE rebuilds flat parts of uniform thickness, photographed from above. No model was built.")
     begin("spec_build_validate")
     thickness = Param(value=thickness_mm, status=Status.MEASURED, uncertainty_mm=thickness_uncertainty_mm,
                       evidence=(Evidence(kind="caliper", detail="entered by the user"),))
     budget = build_budget(fit_rms_mm=cal.rms_mm, loo_rms_mm=cal.loo_rms_mm,
                           bars_checked=(bar_x_mm is not None) + (bar_y_mm is not None), px_per_mm=cal.px_per_mm,
-                          refined=profile.refined, u_persp_2sigma_mm=height.u_persp_mm)
+                          refined=profile.refined, u_persp_2sigma_mm=height.u_persp_mm,
+                          ruler_reading_rel=RULER_READING_REL if ruler else None,
+                          persp_basis="top-down assumed, no mat: tilt, thickness parallax and pose in one term"
+                          if ruler else None)
 
     def _build() -> tuple:
         spec, notes, estimates = profile_to_spec(height.profile, thickness, recon.completion, budget)
@@ -462,12 +550,17 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
         out_dir.mkdir(parents=True, exist_ok=True)
         write_stl(part, out_dir / "model.stl")
         (out_dir / "model.scad").write_text(emit_scad(spec, job_id), encoding="utf-8")
+        (out_dir / "model.dxf").write_text(emit_dxf(spec, job_id), encoding="utf-8")
+        (out_dir / "model.svg").write_text(emit_svg(spec, job_id), encoding="utf-8")
         (out_dir / "spec.json").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
-        crop, overlay = _overlay(view, profile, height.profile, recon.completion)
+        crop, overlay, frame = _overlay(view, profile, height.profile, recon.completion)
+        texture.update(_texture(view, crop, frame, height.profile, recon.completion, seg))
+        cv2.imwrite(str(out_dir / "texture.jpg"), texture.pop("texture_bgr"), [cv2.IMWRITE_JPEG_QUALITY, 86])
         cv2.imwrite(str(out_dir / "photo.jpg"), crop, [cv2.IMWRITE_JPEG_QUALITY, 88])
         cv2.imwrite(str(out_dir / "overlay.png"), overlay)
         cv2.imwrite(str(out_dir / "setofmark.png"), recon.marked_bgr)
 
+    texture: dict = {}
     await asyncio.to_thread(_write)
     end()
 
@@ -478,7 +571,8 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
         "job_id": job_id,
         "photo": photo.name,
         "milestone": "D5: measured geometry, height-corrected; mirror reconstruction; modelled 2σ for every dimension",
-        "calibration": {"page": cal.page, "markers": len(cal.marker_ids), "fit_rms_mm": round(cal.rms_mm, 4),
+        "calibration": {"mode": "ruler" if ruler else "mat", "page": cal.page, "markers": len(cal.marker_ids),
+                        "known_length_mm": known_length_mm, "fit_rms_mm": round(cal.rms_mm, 4),
                         "corner_bias_px": round(cal.corner_bias_px, 3),
                         "loo_rms_mm": None if cal.loo_rms_mm is None else round(cal.loo_rms_mm, 4),
                         "px_per_mm": round(cal.px_per_mm, 2), "perspective_ratio": round(cal.perspective_ratio, 3),
@@ -515,11 +609,12 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
                                if isinstance(h, CircleHole) else {"source": h.source})} for h in spec.holes],
                  "excluded_candidates": notes, "unresolved": spec.unresolved()},
         "confidence": confidence,
+        "texture": texture,
         "validation": validation,
         "timings_s": timings,
         "reconstruction": _reconstruction_report(recon),
-        "outputs": ["model.stl", "model.scad", "spec.json", "photo.jpg", "overlay.png", "setofmark.png",
-                    "report.json"],
+        "outputs": ["model.stl", "model.scad", "model.dxf", "model.svg", "spec.json", "photo.jpg", "texture.jpg",
+                    "overlay.png", "setofmark.png", "report.json"],
         "disclaimer": "A reconstruction, not a verified replacement part. Not for safety-critical use.",
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")

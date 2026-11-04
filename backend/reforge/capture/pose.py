@@ -121,6 +121,40 @@ def _centre(mm_to_px: np.ndarray, focal_px: float, principal: tuple[float, float
     return -(u @ vt).T @ t
 
 
+def ruler_pose(focal_35mm: float | None, image_size: tuple[int, int], px_per_mm: float,
+               part_centre_mm: tuple[float, float], extent_mm: float, thickness_mm: float) -> CameraPose:
+    """Pose for a mat-less photo: the camera is assumed above the part's centre, focal length from EXIF or a prior.
+
+    The height follows from the magnification (focal_px / px_per_mm at the part's top face, plus the thickness to
+    reach the table). The tilt is unmeasured: the wide nadir/height sigmas plus the ruler perspective term in the
+    pipeline cover a hand-held shot within ~10° of top-down.
+    """
+    w, h = image_size
+    diag = float(np.hypot(w, h))
+    if focal_35mm is not None:
+        focal_px, rel, source = focal_35mm / FULL_FRAME_DIAGONAL_MM * diag, EXIF_REL_SIGMA, "exif"
+    else:
+        focal_px, rel, source = PRIOR_FOCAL_35MM / FULL_FRAME_DIAGONAL_MM * diag, PRIOR_REL_SIGMA, "prior"
+    height = float(focal_px / px_per_mm + thickness_mm)
+    warnings = [PoseWarning(
+        "RULER_TOP_DOWN_ASSUMED",
+        "No mat: the camera is assumed above the part's centre, looking straight down. Hold the phone parallel to "
+        "the part; tilt beyond ~10° biases every dimension.")]
+    if source == "prior":
+        warnings.append(PoseWarning(
+            "POSE_FOCAL_ASSUMED",
+            "The photo has no focal-length metadata, so a typical phone lens is assumed: the height correction is "
+            "uncertain, and wrong if a zoom lens was used. Upload the original photo file (not a screenshot or a "
+            "messaging-app copy)."))
+    return CameraPose(
+        focal_px=float(focal_px), focal_rel_sigma=float(rel), focal_source=source, exif_focal_35mm=focal_35mm,
+        homography_focal_px=None, homography_rel_sigma=None,
+        centre_mm=(float(part_centre_mm[0]), float(part_centre_mm[1]), -height), height_mm=height,
+        height_sigma_mm=float(height * np.hypot(rel, 0.10)),
+        nadir_mm=(float(part_centre_mm[0]), float(part_centre_mm[1])),
+        nadir_sigma_mm=float(0.15 * extent_mm), warnings=tuple(warnings))
+
+
 def estimate_pose(cal: Calibration, focal_35mm: float | None = None, *, seed: int = 0) -> CameraPose:
     """Camera pose for one calibrated photo. ``focal_35mm`` comes from the photo's EXIF, when it has one."""
     w, h = cal.image_size

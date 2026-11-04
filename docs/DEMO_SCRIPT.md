@@ -20,6 +20,9 @@ the video live, so it has to stand on its own.
 cd frontend && npm ci && npm run build && cd ../backend && uv run reforge-api   # http://127.0.0.1:8000
 ```
 
+Alternative: record against the public instance at https://reforge.adidomedis.cloud (no install; verified 2026-11-04:
+home page 200, `AI ready`, key configured).
+
 Then check that the header says **AI ready**. Prepare these on the desktop:
 1. the real photo of your part on the mat;
 2. its caliper thickness;
@@ -37,7 +40,7 @@ Then check that the header says **AI ready**. Prepare these on the desktop:
 | 1:45–2:05 | "What we know" (open a "?" tooltip), "Before you print", the hole allowance, the acknowledgement checkbox | "Uncertain spots must be acknowledged before the files unlock. Printers make holes small, so the allowance rebuilds and re-validates the model." |
 | 2:05–2:25 | Show technical details: the Set-of-Mark image, the verification notes, the AI cost line | "Spark answers only with the ids drawn on this image, through a strict schema, and geometry checks every claim. A fracture that matches its own mirror image is rejected. The AI cost of this analysis is right here: a couple of cents." |
 | 2:25–2:40 | An out-of-scope object: the refusal screen | "And when it can't support a rebuild, it says so. A 3D object is refused, with the reason, instead of becoming a confident-looking wrong model." |
-| 2:40–2:52 | Examples → Broken square flange (a **synthetic example**) → the "Known answer" card | "On synthetic examples the truth is known exactly: within four hundredths of a millimetre, and the two bolt holes lost in the break come back." |
+| 2:40–2:52 | Examples → the real gasket (credited photo), then the rendered broken flange → the "Known answer" cards, the textured 3D, "Cut it: DXF" | "On examples placed at a known size, the truth is known exactly: a real gasket within a hundredth of a millimetre, a broken flange rebuilt with its lost bolt holes. And a gasket you cut, not print: here's its DXF." |
 | 2:52–3:00 | The downloads, then the `.scad` opened in OpenSCAD if you have it | "A printable STL and an editable OpenSCAD file. Re-Forge, from a broken part to evidence you can print." |
 
 ## If something goes wrong live
@@ -49,11 +52,15 @@ Then check that the header says **AI ready**. Prepare these on the desktop:
 
 ## Numbers you may quote (measured, `docs/EVALUATION.md`)
 
-- Synthetic examples, live, with SAM 3.1 + Muse Spark (2026-11-03):
-  - bracket 80.03 × 28.04 mm for 80 × 28;
-  - flange 50.02 × 50.02 mm for 50 × 50, with its inferred holes at Ø 5.495 and 5.497 for 5.5;
-  - link 70.01 × 18.02 mm for 70 × 18.
-- AI cost per analysis on the examples: $0.016 to $0.023. Analysis time: 24 to 40 s with AI.
-- The exported `.scad` compiles in OpenSCAD to the same solid as the STL: volume within 4 × 10⁻⁶.
+- Bundled examples, live, with SAM 3.1 + Muse Spark (2026-11-03, night):
+  - **real photo of a real gasket** (composited at a known size): 82.21 × 79.44 mm for 82.20 × 79.45; 9 holes; not
+    rebuilt, even in the run where Spark wrongly called it broken (geometry rejected it: `AXIS_ASYMMETRIC`);
+  - **real photo of a broken chain sprocket** (06A21, user-provided photo): 68.86 × 69.82 mm for 69.04 × 69.95, the
+    missing half with its teeth rebuilt; its intact twin measured 69.17 × 70.99 for 69.20 × 71.09 with nothing
+    rebuilt — proof it invents no damage;
+  - **rendered broken flange**: rebuilt 56.015 × 56.012 mm for 56 × 56, lost holes at Ø 6.497 and 6.495 for 6.5.
+- AI cost per analysis on the examples: $0.019 to $0.028. Analysis time: 26 to 74 s with AI.
+- The exported `.scad` compiles in OpenSCAD to the same solid as the STL: volume within 4 × 10⁻⁶. The DXF reads
+  back in `ezdxf` with the spec's exact outline area and hole radii.
 - First real part (a stamped heart): height within 0.31 and 0.41 mm of the caliper. Its width is still being
   re-measured, so don't quote a width figure.

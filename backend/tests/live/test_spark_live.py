@@ -36,9 +36,9 @@ def test_spark_reads_the_break_and_the_part_is_rebuilt(tmp_path: Path) -> None:
     assert interp["method"] == "muse-spark-1.3" and interp["is_ai"] and interp["fallback_reason"] is None
     analysis = interp["analysis"]
     assert analysis["is_broken"] and analysis["symmetry"] == "mirror"
-    irregular = {s["id"] for s in recon["segments"] if s["kind"] == "irregular"}
+    broken = {s["id"] for s in recon["segments"] if s["kind"] in ("irregular", "broken")}
     picked = set(analysis["fracture_segment_ids"])
-    assert len(picked & irregular) >= len(irregular) // 2, (picked, irregular)
+    assert len(picked & broken) >= len(broken) // 2, (picked, broken)
     assert not any(n["level"] == "rejected" for n in recon["verification"]), recon["verification"]
 
     completion = recon["completion"]

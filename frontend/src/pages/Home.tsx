@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { ApiError, getSamples } from "../api";
-import { HeroArt, StepMatArt, StepModelArt, StepPhotoArt } from "../components/Art";
-import { EvidenceLegend, Spinner } from "../components/ui";
+import { StepMatArt, StepModelArt, StepPhotoArt } from "../components/Art";
+import { Compare, EvidenceLegend, Spinner } from "../components/ui";
 import { defaultAi, launch } from "../lib/launch";
 import { href } from "../lib/route";
-import type { Health, Sample } from "../types";
+import type { Credit as Credit_, Health, Sample } from "../types";
 
 function SampleCard({ sample, health }: { sample: Sample; health: Health | null | undefined }) {
   const [busy, setBusy] = useState(false);
@@ -25,7 +25,7 @@ function SampleCard({ sample, health }: { sample: Sample; health: Health | null 
     <article className="sample">
       <div className="sample-media">
         <img src={sample.thumb_url} alt={`Example photo, rectified: ${sample.title}`} loading="lazy" />
-        <span className="sample-flag" title={sample.label}>Synthetic example</span>
+        <span className="sample-flag" title={sample.label}>{sample.rendered ? "Rendered example" : "Real part · real photo"}</span>
       </div>
       <div className="sample-body">
         <h3>{sample.title}</h3>
@@ -33,6 +33,8 @@ function SampleCard({ sample, health }: { sample: Sample; health: Health | null 
         <p className="sample-truth">
           True size, known exactly: <strong>{t.length_mm.toFixed(2)} × {t.width_mm.toFixed(2)} mm</strong>
         </p>
+        {sample.credit && <Credit credit={sample.credit} />}
+        {sample.provided_by === "user" && <p className="credit">Photo supplied by the user for the examples</p>}
         <button type="button" className="button button-secondary" onClick={run} disabled={busy || health === null}>
           {busy ? <><Spinner /> Starting…</> : "Run this example"}
         </button>
@@ -40,6 +42,37 @@ function SampleCard({ sample, health }: { sample: Sample; health: Health | null 
         {error && <p className="field-error" role="alert">{error}</p>}
       </div>
     </article>
+  );
+}
+
+export function Credit({ credit }: { credit: Credit_ }) {
+  return (
+    <p className="credit">
+      Photo: <a href={credit.page} target="_blank" rel="noreferrer noopener">{credit.author}</a> ·{" "}
+      {credit.licence_url.startsWith("https://creativecommons.org") ? (
+        <a href={credit.licence_url} target="_blank" rel="noreferrer noopener">{credit.licence}</a>
+      ) : credit.licence} · Wikimedia Commons
+    </p>
+  );
+}
+
+function HeroShowcase() {
+  return (
+    <figure className="hero-showcase">
+      <div className="hero-stage">
+        <Compare before="/hero/sprocket-photo.jpg" after="/hero/sprocket-measured.jpg" beforeLabel="Photo" afterLabel="Rebuilt" />
+        <div className="hero-readout" aria-hidden="true">
+          <span className="readout-row"><span className="sw sw-observed" /> 70.08 × 68.26 mm</span>
+          <span className="readout-row">bore + 21 teeth · 663 mm² rebuilt</span>
+          <span className="readout-row muted">±0.39 mm, estimated</span>
+        </div>
+      </div>
+      <figcaption>
+        Re-Forge's actual output on a real broken sprocket, photographed by the user. Drag to compare: blue is
+        measured, orange is rebuilt by mirror. Placed on the mat as a synthetic composite, so its true size is
+        known: 70.23 × 68.31 mm.
+      </figcaption>
+    </figure>
   );
 }
 
@@ -70,13 +103,10 @@ export function Home({ health, anchor }: { health: Health | null | undefined; an
           <ul className="hero-facts">
             <li><span><strong>True millimetres</strong>, from a printed mat</span></li>
             <li><span><strong>Every number labelled</strong> measured or estimated</span></li>
-            <li><span><strong>STL and OpenSCAD</strong>, ready to print or edit</span></li>
+            <li><span><strong>STL, OpenSCAD, DXF and SVG</strong>, to print, edit or cut</span></li>
           </ul>
         </div>
-        <figure className="hero-figure">
-          <HeroArt />
-          <figcaption>Illustration. Solid: measured from the photo. Dashed: rebuilt as a mirror image of the intact end.</figcaption>
-        </figure>
+        <HeroShowcase />
       </section>
 
       <section className="section" id="how" aria-labelledby="how-title">
@@ -87,7 +117,7 @@ export function Home({ health, anchor }: { health: Health | null | undefined; an
             <StepMatArt />
             <span className="step-num">1</span>
             <h3>Print the mat</h3>
-            <p>Print it at 100 % on A4 or Letter. Its markers turn your photo into true millimetres.</p>
+            <p>Print it at 100 % on A4 or Letter. Its markers turn your photo into true millimetres. No printer? You can skip it and enter one measured length instead.</p>
             <p className="step-links">
               <a href="/api/mat/A4.pdf" download>A4 mat (PDF)</a>
               <a href="/api/mat/Letter.pdf" download>Letter mat (PDF)</a>
@@ -122,11 +152,12 @@ export function Home({ health, anchor }: { health: Health | null | undefined; an
       </section>
 
       <section className="section" id="examples" aria-labelledby="examples-title">
-        <p className="eyebrow">Examples</p>
-        <h2 id="examples-title">No mat yet? Try a known part.</h2>
+        <p className="eyebrow">Successes</p>
+        <h2 id="examples-title">No mat yet? Run one that worked.</h2>
         <p className="section-lead">
-          These are synthetic images: rendered parts photographed by a simulated phone camera, so the true size is
-          known exactly and you can compare. They run through the same pipeline as your photos.
+          Every example below is verified end to end: broken ones rebuild against their known truth — a rendered
+          flange with its lost holes back, a real sprocket's missing half back — and intact ones measure against it
+          with nothing invented. Real photos, one rendered part, all through the same pipeline as your photos.
         </p>
         {samples === null ? (
           <p className="muted"><Spinner /> Loading examples…</p>

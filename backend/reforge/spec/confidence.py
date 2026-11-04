@@ -72,9 +72,13 @@ class ErrorBudget:
     edge_basis: str
     u_persp_mm: float  # 1σ
     extra: dict = field(default_factory=dict)
+    scale_basis_override: str | None = None  # ruler mode: the scale isn't a print scale
+    persp_basis: str = "camera pose from the mat"
 
     @property
     def scale_basis(self) -> str:
+        if self.scale_basis_override is not None:
+            return self.scale_basis_override
         if self.scale_checked:
             return "print scale checked with a caliper on both 100 mm bars (±0.05 mm)"
         return (f"print scale assumed at 100 % (±{2 * self.scale_rel:.1%}, 2σ); "
@@ -86,7 +90,7 @@ class ErrorBudget:
             Term("calibration", math.sqrt(2) * self.u_cal_mm, f"{self.cal_basis}, at both ends"),
             Term("print scale", self.scale_rel * length_mm, self.scale_basis),
             Term("edges", math.sqrt(2) * self.u_edge_mm, f"{self.edge_basis}, two edges"),
-            Term("height correction", self.u_persp_mm, "camera pose from the mat"),
+            Term("height correction", self.u_persp_mm, self.persp_basis),
         ))
 
     def diameter(self, diameter_mm: float, fit_rms_mm: float, n_points: int) -> Estimate:
@@ -105,22 +109,33 @@ class ErrorBudget:
 
 
 def build_budget(*, fit_rms_mm: float, loo_rms_mm: float | None, bars_checked: int, px_per_mm: float,
-                 refined: bool, u_persp_2sigma_mm: float) -> ErrorBudget:
+                 refined: bool, u_persp_2sigma_mm: float, ruler_reading_rel: float | None = None,
+                 persp_basis: str | None = None) -> ErrorBudget:
     """The per-photo budget. ``bars_checked`` is how many of the two 100 mm bars the user read with a caliper: the
-    scale counts as checked only with both, since each corrects one axis."""
-    if loo_rms_mm is not None:
+    scale counts as checked only with both, since each corrects one axis. ``ruler_reading_rel`` switches to ruler
+    mode (no mat): no fit term, the entered length's relative uncertainty as the scale term."""
+    if ruler_reading_rel is not None:
+        u_cal, cal_basis = 0.0, "no mat was used: nothing fitted"
+        scale_rel, scale_basis = ruler_reading_rel, (
+            f"ruler: the entered length, read carefully (±{2 * ruler_reading_rel:.1%}, 2σ)")
+    elif loo_rms_mm is not None:
         u_cal, cal_basis = loo_rms_mm, f"mat fit, leave-one-marker-out RMS {loo_rms_mm:.3f} mm"
+        scale_rel, scale_basis = None, None
     else:
         u_cal, cal_basis = fit_rms_mm, f"mat fit RMS {fit_rms_mm:.3f} mm (too few markers for leave-one-out)"
+        scale_rel, scale_basis = None, None
     checked = bars_checked >= 2
     edge_px = EDGE_PX_REFINED if refined else EDGE_PX_COARSE
     u_edge = max(edge_px / px_per_mm, EDGE_MIN_MM)
     edge_basis = (f"{edge_px} px at {px_per_mm:.1f} px/mm, " + ("refined boundary" if refined
                                                                  else "coarse boundary (refinement skipped)"))
+    if scale_rel is None:
+        scale_rel = SCALE_REL_CHECKED if checked else SCALE_REL_ASSUMED
     return ErrorBudget(u_cal_mm=float(u_cal), cal_basis=cal_basis,
-                       scale_rel=SCALE_REL_CHECKED if checked else SCALE_REL_ASSUMED, scale_checked=checked,
+                       scale_rel=scale_rel, scale_checked=checked,
                        u_edge_mm=float(u_edge), edge_basis=edge_basis, u_persp_mm=float(u_persp_2sigma_mm) / 2,
-                       extra={"bars_checked": bars_checked})
+                       extra={"bars_checked": bars_checked}, scale_basis_override=scale_basis,
+                       persp_basis=persp_basis or "camera pose from the mat")
 
 
 def with_mirror(estimate: Estimate, mirror_u_2sigma_mm: float, axis_id: str) -> Estimate:

@@ -84,3 +84,54 @@ def test_scad_is_parametric_and_sanitised() -> None:
     comment_lines = [line for line in text.splitlines() if "caliper" in line]
     assert comment_lines and all("{" not in line and "}" not in line for line in comment_lines)
     assert text.count("{") == text.count("}") == 1  # only the single difference() block
+
+
+# --- flat patterns for cutting: DXF and SVG, read back by real parsers -------------------------------------------
+
+def test_flat_exports_read_back_with_the_spec_geometry(tmp_path) -> None:
+    import xml.etree.ElementTree as ET
+
+    import ezdxf
+    from shapely.geometry import Polygon
+
+    from reforge.cad.flat import emit_dxf, emit_svg
+    from reforge.spec.partspec import parse_spec
+    from tests.unit.specs import bracket_dict
+
+    spec = parse_spec(bracket_dict())
+    path = tmp_path / "part.dxf"
+    path.write_text(emit_dxf(spec, "job-1"))
+    doc = ezdxf.readfile(path)
+    assert doc.dxfversion == "AC1009" and doc.header.get("$INSUNITS") == 4  # R12, millimetres
+    msp = doc.modelspace()
+    outlines = [e for e in msp if e.dxftype() == "POLYLINE" and e.dxf.layer == "OUTLINE"]
+    circles = [e for e in msp if e.dxftype() == "CIRCLE"]
+    assert len(outlines) == 1 and outlines[0].is_closed
+    ring = [(v.dxf.location.x, v.dxf.location.y) for v in outlines[0].vertices]
+    assert Polygon(ring).area == pytest.approx(spec.outline.polygon.area, rel=1e-6)
+    want = sorted(round(h.diameter.value / 2, 4) for h in spec.holes)
+    assert sorted(round(c.dxf.radius, 4) for c in circles) == want
+
+    svg = ET.fromstring(emit_svg(spec, "job-1"))
+    assert svg.get("width").endswith("mm") and svg.get("height").endswith("mm")
+    width_mm = float(svg.get("width")[:-2])
+    x0, _, x1, _ = spec.outline.polygon.bounds
+    assert width_mm == pytest.approx(x1 - x0 + 4.0, abs=1e-3)  # true size, plus the 2 mm margin each side
+    ns = "{http://www.w3.org/2000/svg}"
+    assert len(svg.findall(f"{ns}circle")) == len(spec.holes)
+
+
+def test_flat_exports_apply_the_fit_compensation() -> None:
+    import ezdxf  # noqa: F401  (the dev dependency the export check relies on)
+
+    from reforge.cad.flat import flat_pattern
+    from reforge.spec.partspec import parse_spec
+    from tests.unit.specs import bracket_dict
+
+    base = parse_spec(bracket_dict())
+    loose = parse_spec({**base.model_dump(), "fit": {"hole_offset_mm": 0.3, "outline_offset_mm": -0.1}})
+    a, b = flat_pattern(base), flat_pattern(loose)
+    assert all(db == pytest.approx(da + 0.3) for (_, _, _, da), (_, _, _, db) in zip(a.circles, b.circles, strict=True))
+    from shapely.geometry import Polygon
+
+    assert Polygon(b.outline).area < Polygon(a.outline).area

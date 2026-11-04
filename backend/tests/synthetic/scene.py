@@ -67,6 +67,124 @@ def broken_bracket(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, 
     return hero_bracket(layout, offset_mm=offset_mm).difference(cut)
 
 
+def bumper_bracket(layout: MatLayout, *, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """A 94×30 mm bumper mounting bracket: a 64×26 mm body with a Ø30 mounting ear at each end, one Ø5.0 hole
+    per ear, 64 mm apart. Mirror-symmetric about both centre lines, like a stamped OEM guide bracket."""
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    body = box(cx - 32, cy - 13, cx + 32, cy + 13).union(Point(cx - 32, cy).buffer(15, quad_segs=48)).union(
+        Point(cx + 32, cy).buffer(15, quad_segs=48))
+    plate = body.buffer(-2, quad_segs=16).buffer(2, quad_segs=16)
+    for dx in (-32, 32):
+        plate = plate.difference(Point(cx + dx, cy).buffer(2.5, quad_segs=64))
+    return plate
+
+
+def broken_bumper_bracket(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, float] = (0.0, 0.0),
+                          break_x_mm: float = 38.0) -> Polygon:
+    """The bumper bracket with its right ear snapped off along a rough fracture (the meander model of
+    ``broken_bracket``). The right hole stays intact."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    rng = np.random.default_rng(seed)
+    y = np.arange(-17.0, 17.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = break_x_mm + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 60, cy + 17), (cx + 60, cy - 17)])
+    return bumper_bracket(layout, offset_mm=offset_mm).difference(cut)
+
+
+def mounting_flange(layout: MatLayout) -> Polygon:
+    """A 56 mm square mounting flange, corner radius 6 mm: a Ø24 bore and four Ø6.5 holes on a 44 mm square,
+    like a flat thermostat-flange blank."""
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    plate = box(cx - 28, cy - 28, cx + 28, cy + 28).buffer(-6, quad_segs=16).buffer(6, quad_segs=16)
+    plate = plate.difference(Point(cx, cy).buffer(12, quad_segs=64))
+    for dx in (-22, 22):
+        for dy in (-22, 22):
+            plate = plate.difference(Point(cx + dx, cy + dy).buffer(3.25, quad_segs=64))
+    return plate
+
+
+def broken_mounting_flange(layout: MatLayout, *, seed: int = 2) -> Polygon:
+    """The mounting flange with its right side snapped off 16 mm from the bore's centre: both right-hand holes are
+    lost and the bore survives."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    rng = np.random.default_rng(seed)
+    y = np.arange(-33.0, 33.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = 16.0 + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 60, cy + 33), (cx + 60, cy - 33)])
+    return mounting_flange(layout).difference(cut)
+
+
+def adjuster_link(layout: MatLayout) -> Polygon:
+    """An 80×20 mm slotted adjuster link: a 24×6.5 mm centre slot and two Ø6.5 holes 60 mm apart, like a
+    headlight-aiming link."""
+    from shapely.geometry import LineString
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    body = LineString([(cx - 30, cy), (cx + 30, cy)]).buffer(10, quad_segs=32)
+    slot = LineString([(cx - 12, cy), (cx + 12, cy)]).buffer(3.25, quad_segs=32)
+    link = body.difference(slot)
+    for dx in (-30, 30):
+        link = link.difference(Point(cx + dx, cy).buffer(3.25, quad_segs=64))
+    return link
+
+
+def broken_link(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """The adjuster link with its right ear-tip snapped off along a rough fracture (the meander model of
+    ``broken_bracket``), past the slot and the right hole: both survive to pin the mirror."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    rng = np.random.default_rng(seed)
+    y = np.arange(-12.0, 12.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = 35.0 + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 60, cy + 12), (cx + 60, cy - 12)])
+    return adjuster_link(layout).difference(cut)
+
+
+def shim(layout: MatLayout, *, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """A 64×40 mm rectangular shim, corner radius 3 mm, with two Ø5 holes 44 mm apart, like a flat alignment
+    shim."""
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    plate = box(cx - 32, cy - 20, cx + 32, cy - 20 + 40).buffer(-3, quad_segs=16).buffer(3, quad_segs=16)
+    for dx in (-22, 22):
+        plate = plate.difference(Point(cx + dx, cy).buffer(2.5, quad_segs=64))
+    return plate
+
+
+def broken_shim(layout: MatLayout, *, seed: int = 1, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """The shim with its right end snapped off along a rough fracture (the meander model of ``broken_bracket``),
+    past the right hole: both holes survive to pin the mirror."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    rng = np.random.default_rng(seed)
+    y = np.arange(-22.0, 22.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = 27.0 + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    cut = Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)), (cx + 60, cy + 22), (cx + 60, cy - 22)])
+    return shim(layout, offset_mm=offset_mm).difference(cut)
+
+
 def guitar_pick(layout: MatLayout, *, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
     """A 26 × 30 mm teardrop, mirror-symmetric about the vertical line through the free-zone centre; no holes."""
     x0, y0, x1, y1 = layout.free_zone_mm

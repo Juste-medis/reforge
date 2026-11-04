@@ -103,6 +103,12 @@ export function errorCopy(code: string): ErrorCopy {
   if (ERROR_COPY[code]) return ERROR_COPY[code];
   if (code.startsWith("META_")) return AI_DOWN;
   if (code.startsWith("CAL_")) return { title: "We couldn't use the mat in this photo", tips: MAT_TIPS, reshoot: true };
+  if (code.startsWith("RULER_")) return {
+    title: "We couldn't use the entered length",
+    tips: ["Enter the part's longest side in mm, measured with a ruler.",
+           "Photograph the whole part straight from above on a plain contrasting background."],
+    reshoot: true,
+  };
   return { title: "The analysis stopped", tips: ["Try again, or try another photo."] };
 }
 

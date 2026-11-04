@@ -45,9 +45,12 @@ SAMPLE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 OUTPUTS = {
     "model.stl": "model/stl",
     "model.scad": "text/plain; charset=utf-8",
+    "model.dxf": "application/dxf",
+    "model.svg": "image/svg+xml",
     "spec.json": "application/json",
     "report.json": "application/json",
     "photo.jpg": "image/jpeg",
+    "texture.jpg": "image/jpeg",
     "overlay.png": "image/png",
     "setofmark.png": "image/png",
 }
@@ -173,7 +176,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             reader = SparkInterpreter(client, job_id=job_id) if use_spark else GeometricInterpreter()
             return await photo_to_stl(job_dir / "input.png", job_dir, opts["thickness_mm"], seg,
                                       bar_x_mm=opts["bar_x_mm"], bar_y_mm=opts["bar_y_mm"], job_id=job_id,
-                                      focal_35mm=opts["focal_35mm"], interpreter=reader, progress=progress)
+                                      focal_35mm=opts["focal_35mm"], interpreter=reader, progress=progress,
+                                      known_length_mm=opts["known_length_mm"])
         except ReforgeError as exc:
             exc.job_id = job_id
             (job_dir / "error.json").write_text(json.dumps({"job_id": job_id, **exc.to_dict()}, indent=2))
@@ -191,6 +195,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from_job: Annotated[str | None, Form(max_length=12)] = None,
         bar_x_mm: Annotated[float | None, Form()] = None,  # range-checked by the calibration, with a typed hint
         bar_y_mm: Annotated[float | None, Form()] = None,
+        known_length_mm: Annotated[float | None, Form(gt=0, le=5000)] = None,  # ruler mode: no mat, longest side
         segmenter: Annotated[str, Form(pattern="^(sam|classical)$")] = "sam",
         prompt: Annotated[str, Form(max_length=60)] = "plastic part",
         interpreter: Annotated[str | None, Form(pattern="^(spark|geometric)$")] = None,
@@ -233,7 +238,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         use_spark = (interpreter or ("spark" if segmenter == "sam" else "geometric")) == "spark"
         opts = {"thickness_mm": thickness_mm, "bar_x_mm": bar_x_mm, "bar_y_mm": bar_y_mm, "segmenter": segmenter,
                 "prompt": prompt.strip() or "plastic part", "interpreter": "spark" if use_spark else "geometric",
-                "focal_35mm": focal_35mm}
+                "focal_35mm": focal_35mm, "known_length_mm": known_length_mm}
         request_record = {"job_id": job_id, "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
                           "image_size": size, "sample": sample, "from_job": from_job, **opts}
         (job_dir / "request.json").write_text(json.dumps(request_record, indent=2))
@@ -252,7 +257,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {}
         req = json.loads(path.read_text())
         keep = ("created_at", "image_size", "sample", "from_job", "thickness_mm", "bar_x_mm", "bar_y_mm", "segmenter",
-                "prompt", "interpreter", "focal_35mm")
+                "prompt", "interpreter", "focal_35mm", "known_length_mm")
         summary = {k: req.get(k) for k in keep}
         if req.get("sample") in samples:
             summary["sample_info"] = _public_sample(samples[req["sample"]])
@@ -292,6 +297,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def _compensated(job_dir: Path, name: str, hole_offset_mm: float, outline_offset_mm: float) -> tuple[bytes, str]:
         """Rebuild the job's validated PartSpec with a printer compensation: same evidence, offset holes/outline."""
         from reforge.cad.build import build_part
+        from reforge.cad.flat import emit_dxf, emit_svg
         from reforge.cad.scad import emit_scad
         from reforge.spec.partspec import parse_spec
         from reforge.validation.mesh import summarize, validate_part
@@ -301,6 +307,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         spec = parse_spec(data)  # every semantic check runs again: walls, hole spacing, sizes
         if name == "model.scad":
             return emit_scad(spec, job_dir.name).encode(), "text/plain; charset=utf-8"
+        if name == "model.dxf":
+            return emit_dxf(spec, job_dir.name).encode(), "application/dxf"
+        if name == "model.svg":
+            return emit_svg(spec, job_dir.name).encode(), "image/svg+xml"
         part = build_part(spec)
         validation = summarize(validate_part(part, spec))
         if not validation["valid"]:
@@ -320,7 +330,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = job_dir / name
         if not path.is_file():
             raise HTTPException(404)
-        if name in ("model.stl", "model.scad") and (hole_offset_mm or outline_offset_mm):
+        if name.startswith("model.") and (hole_offset_mm or outline_offset_mm):
             content, media = await asyncio.to_thread(_compensated, job_dir, name, hole_offset_mm, outline_offset_mm)
             stem, ext = name.split(".")
             tag = f"-holes{hole_offset_mm:+.2f}" if hole_offset_mm else ""

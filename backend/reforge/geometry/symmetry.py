@@ -1,7 +1,7 @@
 """Mirror-symmetry search on a part's footprint, with measured support and a bootstrap uncertainty.
 
 Candidates come from equal-diameter hole pairs (their perpendicular bisector), the principal axes of the outline,
-and a 2° sweep in which each direction's offset is the mode of the midpoints of point pairs facing each other.
+and a 0.5° sweep in which each direction's offset is the mode of the midpoints of point pairs facing each other.
 
 Scoring reflects the outline and the holes, and reports them separately. A mirror image that lands within τ of the
 (non-fracture) outline is a match; one whose nearest outline point is on a suspected fracture is *no evidence*,
@@ -33,15 +33,21 @@ from shapely.geometry import Polygon
 from reforge.geometry.contour import resample_closed
 
 TAU_MM = 0.3
-SWEEP_STEP_DEG = 2.0
+SWEEP_STEP_DEG = 0.5  # a tooth axis must be hit within ~±0.3° (at a 35 mm rim, 0.5° already shifts teeth by TAU_MM);
+# a 2° sweep left ICP pairing tips to neighbouring flanks, a wrong optimum it can't escape
 SAMPLE_MM = 0.5
 DENSE_MM = 0.05
 ICP_ITERATIONS = 30
 BOOTSTRAP_ROUNDS = 64
 BLOCK_POINTS = 20
 DUPLICATE_ANGLE_DEG = 2.0
-DUPLICATE_OFFSET_MM = 1.0
-HOLE_WEIGHT = 20.0  # in the axis fit only: a matched hole pair's midpoint counts as this many outline midpoints
+DUPLICATE_OFFSET_MM = 0.3  # sub-mm twins stay separate: a hole-pinned axis 0.4 mm from a slid-along-edges one are
+# different rebuilds (full end vs partial), and the rule tells them apart by matched holes, not a merge coin flip
+HOLE_WEIGHT = 200.0  # in the axis fit only: a matched hole pair's midpoint counts as this many outline
+# midpoints (matched pairs are exact to ±0.05 mm, so they pin the axis position while the outline spread pins its
+# direction; straight edges alone let the fit slide along them — the aperture problem)
+DENSE_SEARCH_BELOW = 0.6  # pinpoint search trigger, below: the 0.5° sweep grid can miss a high-frequency
+# outline's axis outright (a sprocket's teeth need the angle within ±0.2° and the offset within ±0.15 mm at once)
 
 
 @dataclass(frozen=True)
@@ -132,10 +138,10 @@ def _hole_pairs(axis: MirrorAxis, o: _Outline) -> tuple[list[tuple[np.ndarray, n
     return pairs, mismatches
 
 
-def _score(axis: MirrorAxis, o: _Outline) -> MirrorAxis:
+def _score(axis: MirrorAxis, o: _Outline, tau_mm: float = TAU_MM) -> MirrorAxis:
     dist, idx = o.tree.query(axis.reflect(o.samples))
     fracture = o.dense_fracture[idx]
-    match = (dist <= TAU_MM) & ~fracture
+    match = (dist <= tau_mm) & ~fracture
     mismatch = ~match & ~fracture  # landing nearest a fracture is no evidence either way
     hole_pairs, hole_mismatches = _hole_pairs(axis, o)
     good, bad = int(match.sum()), int(mismatch.sum())
@@ -145,10 +151,10 @@ def _score(axis: MirrorAxis, o: _Outline) -> MirrorAxis:
                    hole_mismatches=hole_mismatches, matched_mm=good * SAMPLE_MM)
 
 
-def _pairs(axis: MirrorAxis, o: _Outline) -> tuple[np.ndarray, np.ndarray]:
+def _pairs(axis: MirrorAxis, o: _Outline, tau_mm: float = TAU_MM) -> tuple[np.ndarray, np.ndarray]:
     """(sample points, partners) of the matched outline pairs under ``axis``."""
     dist, idx = o.tree.query(axis.reflect(o.samples))
-    keep = (dist <= TAU_MM) & ~o.dense_fracture[idx]
+    keep = (dist <= tau_mm) & ~o.dense_fracture[idx]
     return o.samples[keep], o.dense[idx[keep]]
 
 
@@ -237,14 +243,14 @@ def _sweep(o: _Outline) -> list[MirrorAxis]:
         u, n = np.array([np.cos(a), np.sin(a)]), np.array([-np.sin(a), np.cos(a)])
         t, s = pts @ u, pts @ n
         i, j = np.triu_indices(len(pts), k=1)
-        facing = np.abs(t[i] - t[j]) <= 1.0
+        facing = np.abs(t[i] - t[j]) <= 0.5
         if facing.sum() < 4:
             continue
         mids = (s[i][facing] + s[j][facing]) / 2
-        bins = np.arange(mids.min() - 0.25, mids.max() + 0.5, 0.5)
+        bins = np.arange(mids.min() - 0.125, mids.max() + 0.25, 0.25)
         hist, edges = np.histogram(mids, bins=bins)
         peak = int(np.argmax(hist))
-        near = mids[np.abs(mids - (edges[peak] + 0.25)) <= 0.5]
+        near = mids[np.abs(mids - (edges[peak] + 0.125)) <= 0.25]
         offset = float(np.median(near))
         found.append(_axis(offset * n, u, o.centroid, ("sweep",)))
     return found
@@ -277,20 +283,49 @@ def find_mirror_axes(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float,
 
     scored = sorted((_score(c, o) for c in candidates), key=_rank)
     refined: list[MirrorAxis] = []
-    for cand in scored:
-        if len(refined) >= keep + 2:
-            break
+
+    def _absorb(cand: MirrorAxis) -> None:
         r = _refine(cand, o)
         twin = next((x for x in refined if _same(x, r)), None)
         if twin is None:
             refined.append(r)
-        else:  # keep every source that led to the same axis: agreement is evidence
-            merged = tuple(dict.fromkeys(twin.sources + r.sources))
-            refined[refined.index(twin)] = replace(twin, sources=merged)
+        else:  # same axis from two starts: keep the better-evidenced geometry (contradiction excluded: lost holes
+            merged = tuple(dict.fromkeys(twin.sources + r.sources))  # contradict the true axis until the break
+            # excludes them), and every source that led to it — agreement is evidence
+            def key(a: MirrorAxis) -> tuple:
+                return (-a.matched_mm, -round(a.support, 2), a.inlier_rms_mm)
+
+            best = twin if key(twin) <= key(r) else r
+            refined[refined.index(twin)] = replace(best, sources=merged)
+
+    for cand in scored:
+        if len(refined) >= keep + 2:
+            break
+        _absorb(cand)
+    # Hole-pinned starts are always refined: a matched hole pins the axis position decisively, yet a big break
+    # caps its support below the rank cutoff above (the flange's through-bore vertical at 0.34). No twin pre-check:
+    # the post-refine merge keeps the better-converged geometry, which is the point.
+    for cand in scored:
+        if cand.sources[0].startswith(("hole pair", "through ")):
+            _absorb(cand)
     refined.sort(key=_rank)
+    if o.holes and (not refined or refined[0].support < DENSE_SEARCH_BELOW):
+        # Pinpoint search: holes pin the offset exactly, so a dense angle sweep through each hole centre finds
+        # axes the coarse grid misses. Only when nothing plausible turned up: asymmetric parts pay a few seconds
+        # and still find nothing, which is the correct answer for them.
+        dense = [_axis(np.asarray(centre), np.array([np.cos(a), np.sin(a)]), o.centroid,
+                       (f"through {hid} dense",))
+                 for hid, centre, _ in o.holes for a in np.arange(0.0, np.pi, np.radians(SWEEP_STEP_DEG))]
+        for cand in sorted((_score(c, o) for c in dense), key=_rank)[: 2 * keep]:
+            _absorb(cand)
+        refined.sort(key=_rank)
     rng = np.random.default_rng(seed)
+    # Truncation keeps the top ranks, plus hole-pinned stragglers (cap two): a through-bore axis can sit below the
+    # cutoff on support (a big break caps every support) while pinning the position decisively.
+    kept, pinned = refined[:keep], [a for a in refined[keep:] if any(
+        s.startswith(("hole pair", "through ")) for s in a.sources)][:2]
     return [replace(_bootstrap(a, o, rng), axis_id=f"A{i}", offset_ambiguity_mm=_ambiguity(a, o))
-            for i, a in enumerate(refined[:keep])]
+            for i, a in enumerate(kept + pinned)]
 
 
 def _ambiguity(axis: MirrorAxis, o: _Outline) -> float:
@@ -311,8 +346,13 @@ def _ambiguity(axis: MirrorAxis, o: _Outline) -> float:
 
 
 def _rank(axis: MirrorAxis) -> tuple:
-    # With a long fracture many axes reach 100 % support on what is left; then the one confirmed by more outline.
-    return (axis.contradicted_by_holes, -round(axis.support, 2), -axis.matched_mm, axis.inlier_rms_mm)
+    # Matched holes first: they pin an axis sub-mm, while outline evidence slides (a vertical shifted 0.45 mm along
+    # straight edges "matches" 2 mm more outline than the exact one, pairing the intact end with the break remnant).
+    # Then evidence amount: with a long fracture many axes reach 100 % support on what is left, and without exclusion
+    # a big break caps every support well below it (a sprocket's true axis at 0.39). Mismatches stay out: lost holes
+    # contradict the true axis until the break excludes them, so contradiction filters later (after the mirror pass),
+    # never here — ranking by it would truncate the true axis before it can be rescued.
+    return (-axis.hole_matches, -axis.matched_mm, -round(axis.support, 2), axis.inlier_rms_mm)
 
 
 def _same(a: MirrorAxis, b: MirrorAxis) -> bool:

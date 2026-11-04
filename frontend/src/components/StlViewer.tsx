@@ -59,16 +59,56 @@ function dimension(a: THREE.Vector3, b: THREE.Vector3, offset: THREE.Vector3, te
   return g;
 }
 
-export function StlViewer({ url, lines, angleDeg = 0, dims }: {
+export interface PhotoTexture {
+  url: string;
+  size_px: [number, number];
+  u: [number, number, number];
+  v: [number, number, number];
+  photographed_outline_mm: [number, number][];
+  colour_hex: string;
+}
+
+/** The solid split for a photo-textured preview: the top face (with UVs into the texture, which is the photo where
+ * the part was photographed and ember where it was rebuilt) and everything else (walls, bottom). Same triangles as the
+ * STL, only grouped. */
+function splitForTexture(geometry: THREE.BufferGeometry, tex: PhotoTexture, topZ: number) {
+  const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const nrm = geometry.getAttribute("normal") as THREE.BufferAttribute;
+  const top: number[] = [], topN: number[] = [], uvs: number[] = [], rest: number[] = [], restN: number[] = [];
+  const [w, h] = tex.size_px;
+  for (let t = 0; t < pos.count; t += 3) {
+    const nz = (nrm.getZ(t) + nrm.getZ(t + 1) + nrm.getZ(t + 2)) / 3;
+    const cz = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3;
+    const isTop = nz > 0.9 && Math.abs(cz - topZ) < 0.02;
+    for (let k = t; k < t + 3; k++) {
+      const x = pos.getX(k), y = pos.getY(k);
+      (isTop ? top : rest).push(x, y, pos.getZ(k));
+      (isTop ? topN : restN).push(nrm.getX(k), nrm.getY(k), nrm.getZ(k));
+      if (isTop) uvs.push((tex.u[0] + tex.u[1] * x + tex.u[2] * y) / w, 1 - (tex.v[0] + tex.v[1] * x + tex.v[2] * y) / h);
+    }
+  }
+  const make = (p: number[], n: number[], uv?: number[]) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(n, 3));
+    if (uv) g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    return g;
+  };
+  return { top: make(top, topN, uvs), rest: make(rest, restN) };
+}
+
+export function StlViewer({ url, lines, angleDeg = 0, dims, texture }: {
   url: string;
   lines?: SpecLines | null;
   angleDeg?: number;
   dims?: { length: number; width: number } | null;
+  texture?: PhotoTexture | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const api = useRef<{ reset: () => void; top: () => void; setEdges: (v: boolean) => void; setDims: (v: boolean) => void } | null>(null);
+  const api = useRef<{ reset: () => void; top: () => void; setEdges: (v: boolean) => void; setDims: (v: boolean) => void; setPhoto: (v: boolean) => void } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [edges, setEdges] = useState(true);
+  const [photo, setPhoto] = useState(true);
   const [showDims, setShowDims] = useState(true);
 
   useEffect(() => {
@@ -135,6 +175,8 @@ export function StlViewer({ url, lines, angleDeg = 0, dims }: {
     observer.observe(el);
     resize();
 
+    let photoGroup: THREE.Group | null = null;
+    let plainMesh: THREE.Mesh | null = null;
     let home = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
     let topView = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
     let disposed = false;
@@ -146,6 +188,22 @@ export function StlViewer({ url, lines, angleDeg = 0, dims }: {
         const material = new THREE.MeshStandardMaterial({ color: 0xdfe3e8, metalness: 0.0, roughness: 0.62 });
         const mesh = new THREE.Mesh(geometry, material);
         model.add(mesh);
+        if (texture) {
+          // The real part's look: the rectified photo on its photographed top face, its measured colour on the
+          // walls, and the rebuilt top face in ember, so rebuilt material never passes for photographed.
+          geometry.computeBoundingBox();
+          const parts = splitForTexture(geometry, texture, geometry.boundingBox?.max.z ?? lines?.thickness ?? 0);
+          const map = new THREE.TextureLoader().load(texture.url, () => request());
+          map.colorSpace = THREE.SRGBColorSpace;
+          map.anisotropy = 8;
+          const real = new THREE.Group();
+          real.add(new THREE.Mesh(parts.top, new THREE.MeshStandardMaterial({ map, roughness: 0.58, metalness: 0.05 })));
+          real.add(new THREE.Mesh(parts.rest, new THREE.MeshStandardMaterial({ color: new THREE.Color(texture.colour_hex), roughness: 0.6, metalness: 0.05 })));
+          model.add(real);
+          photoGroup = real;
+          mesh.visible = false;
+          plainMesh = mesh;
+        }
         model.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 35),
                                          new THREE.LineBasicMaterial({ color: 0x8a909c, transparent: true, opacity: 0.55 })));
         if (lines) {
@@ -211,6 +269,13 @@ export function StlViewer({ url, lines, angleDeg = 0, dims }: {
         edgeGroup.visible = v;
         request();
       },
+      setPhoto: (v) => {
+        if (photoGroup && plainMesh) {
+          photoGroup.visible = v;
+          plainMesh.visible = !v;
+        }
+        request();
+      },
       setDims: (v) => {
         dimGroup.visible = v;
         request();
@@ -235,10 +300,11 @@ export function StlViewer({ url, lines, angleDeg = 0, dims }: {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [url, lines, angleDeg, dims]);
+  }, [url, lines, angleDeg, dims, texture]);
 
   useEffect(() => api.current?.setEdges(edges), [edges, status]);
   useEffect(() => api.current?.setDims(showDims), [showDims, status]);
+  useEffect(() => api.current?.setPhoto(photo), [photo, status]);
 
   return (
     <div className="viewer" ref={host}>
@@ -250,6 +316,9 @@ export function StlViewer({ url, lines, angleDeg = 0, dims }: {
       <div className="viewer-tools" role="toolbar" aria-label="3D view">
         <button type="button" onClick={() => api.current?.reset()}>Reset</button>
         <button type="button" onClick={() => api.current?.top()}>Top view</button>
+        {texture && (
+          <button type="button" aria-pressed={photo} onClick={() => setPhoto((v) => !v)} title="The real photo on the model's top face">Photo</button>
+        )}
         {lines && (
           <button type="button" aria-pressed={edges} onClick={() => setEdges((v) => !v)} title="Edges coloured by where they came from">Evidence</button>
         )}

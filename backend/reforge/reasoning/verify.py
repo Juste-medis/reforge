@@ -74,14 +74,14 @@ def verify(analysis: PartAnalysis, segmented: SegmentedOutline, axes: list[Mirro
                                   f"{sid} matches its mirror image under {axis.axis_id} ({matched:.0%} of its length), "
                                   "so it looks intact: not treated as a fracture.", "rejected"))
                 continue
-        if seg.kind != "irregular":
-            notes.append(Note("FRACTURE_SMOOTH", f"{sid} was picked as a fracture but the geometry sees a smooth "
-                                                 f"{seg.kind} (fit residual {seg.fit_rms_mm:.3f} mm): please confirm.",
-                              "warning"))
+        if seg.kind not in ("irregular", "broken"):
+            notes.append(Note("FRACTURE_SMOOTH", f"{sid} was picked as a fracture but the geometry sees an "
+                                                 f"intact-looking {seg.kind} (fit residual {seg.fit_rms_mm:.3f} mm): "
+                                                 "please confirm.", "warning"))
         accepted.append(sid)
 
     unpicked = [s.seg_id for s in segmented.segments
-                if s.kind == "irregular" and s.seg_id not in analysis.fracture_segment_ids]
+                if s.kind in ("irregular", "broken") and s.seg_id not in analysis.fracture_segment_ids]
     if unpicked:
         notes.append(Note("FRACTURE_UNPICKED", f"{', '.join(unpicked)} look irregular but weren't picked as fracture "
                                                "edges; they're left as photographed.", "warning"))

@@ -17,6 +17,7 @@ from reforge.config import Settings
 from reforge.errors import ReforgeError
 from reforge.pipeline import STAGES
 from tests.synthetic.test_pipeline import _asymmetric_photo
+from tests.synthetic.test_ruler_mode import _matless_photo
 
 
 @pytest.fixture
@@ -53,6 +54,17 @@ def test_job_round_trip(client: TestClient, photo_bytes: bytes, tmp_path: Path) 
     assert client.get(body["files"]["overlay.png"]).headers["content-type"] == "image/png"
     stored = tmp_path / "data" / "jobs" / body["job_id"] / "input.png"
     assert stored.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_ruler_mode_through_api(client: TestClient, tmp_path: Path) -> None:
+    data = _matless_photo(tmp_path / "photo.png").read_bytes()
+    response = _post(client, data, known_length_mm="80.0")
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    assert report["validation"]["valid"]
+    assert report["calibration"]["mode"] == "ruler"
+    assert abs(report["part"]["size_mm"]["length"] - 80.0) < 1.2
+    assert abs(report["part"]["size_mm"]["width"] - 28.0) < 1.2
 
 
 def test_exif_gps_never_reaches_disk(client: TestClient, photo_bytes: bytes, tmp_path: Path) -> None:
@@ -161,6 +173,13 @@ def test_a_background_job_reports_its_real_stages_then_its_result(live_client: T
     assert "modelled" in report["confidence"]["note"]
     photo = live_client.get(body["result"]["files"]["photo.jpg"])
     assert photo.status_code == 200 and photo.headers["content-type"] == "image/jpeg"
+    files = body["result"]["files"]
+    assert live_client.get(files["texture.jpg"]).headers["content-type"] == "image/jpeg"
+    tex = report["texture"]
+    assert len(tex["u"]) == 3 and len(tex["v"]) == 3 and tex["colour_hex"].startswith("#")
+    dxf, svg = live_client.get(files["model.dxf"]), live_client.get(files["model.svg"])
+    assert dxf.status_code == 200 and "AC1009" in dxf.text and "CIRCLE" in dxf.text or "POLYLINE" in dxf.text
+    assert svg.status_code == 200 and svg.headers["content-type"].startswith("image/svg+xml") and 'mm"' in svg.text
 
 
 def test_a_failed_background_job_says_why(live_client: TestClient) -> None:
@@ -194,7 +213,7 @@ def test_internal_error_details_stay_on_disk(client: TestClient, tmp_path: Path)
 def test_exactly_one_photo_source_is_required(client: TestClient, photo_bytes: bytes) -> None:
     neither = client.post("/api/jobs", data={"thickness_mm": "3", "segmenter": "classical"})
     assert neither.status_code == 422 and neither.json()["error"]["code"] == "SOURCE_INVALID"
-    both = _post(client, photo_bytes, sample="broken-bracket")
+    both = _post(client, photo_bytes, sample="square-gasket")
     assert both.status_code == 422 and both.json()["error"]["code"] == "SOURCE_INVALID"
     unknown = client.post("/api/jobs", data={"thickness_mm": "3", "segmenter": "classical", "sample": "nope"})
     assert unknown.json()["error"]["code"] == "SAMPLE_NOT_FOUND"
@@ -202,25 +221,44 @@ def test_exactly_one_photo_source_is_required(client: TestClient, photo_bytes: b
     assert gone.status_code == 404 and gone.json()["error"]["code"] == "JOB_NOT_FOUND"
 
 
-def test_examples_are_listed_labelled_and_runnable(client: TestClient) -> None:
+def test_examples_are_listed_labelled_credited_and_runnable(client: TestClient) -> None:
     samples = client.get("/api/samples").json()
-    assert {s["id"] for s in samples} >= {"broken-bracket", "broken-flange", "slotted-link"}
+    assert {s["id"] for s in samples} >= {"broken-flange", "broken-sprocket", "square-gasket", "intact-sprocket"}
     for s in samples:
-        assert s["kind"] == "synthetic" and "Not a real photo" in s["label"]
+        assert s["kind"] == "synthetic" and "Not a " in s["label"]
+        if s.get("rendered"):  # a rendered part: no photo, so nothing to credit, and the label says so
+            assert "rendered part" in s["label"] and "credit" not in s
+        elif s.get("provided_by") == "user":  # a photo the user supplied: permission, not a Commons licence
+            assert "user-provided photo" in s["label"]
+        else:  # a real photo of a real part, composited: its author and licence travel with it
+            assert "SYNTHETIC COMPOSITE" in s["label"]
+            assert s["credit"]["author"] and s["credit"]["licence"] and s["credit"]["page"].startswith("https://")
         assert client.get(s["thumb_url"]).headers["content-type"] == "image/jpeg"
-    assert client.get("/api/samples/broken-bracket/../../.env").status_code == 404
-    bracket = next(s for s in samples if s["id"] == "broken-bracket")
-    response = client.post("/api/jobs", data={"thickness_mm": str(bracket["thickness_mm"]), "segmenter": "classical",
-                                              "sample": "broken-bracket"})
+    assert client.get("/api/samples/square-gasket/../../.env").status_code == 404
+    gasket = next(s for s in samples if s["id"] == "square-gasket")
+    response = client.post("/api/jobs", data={"thickness_mm": str(gasket["thickness_mm"]), "segmenter": "classical",
+                                              "sample": "square-gasket"})
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    # A real photo of a real gasket, composited at a known size: the caliper-style size against the exact truth.
+    size = report["part"]["size_mm"]
+    assert abs(size["length"] - gasket["truth"]["length_mm"]) < 0.1
+    assert abs(size["width"] - gasket["truth"]["width_mm"]) < 0.1
+    assert len(report["part"]["holes"]) == 9  # the bore and the eight passages
+    assert report["reconstruction"]["completion"] is None  # intact: nothing may be invented
+    status = client.get(f"/api/jobs/{response.json()['job_id']}").json()
+    assert status["request"]["sample"] == "square-gasket" and status["request"]["sample_info"]["kind"] == "synthetic"
+    # And a real photo of a really broken sprocket: the missing half comes back, against the exact truth.
+    sprocket = next(s for s in samples if s["id"] == "broken-sprocket")
+    response = client.post("/api/jobs", data={"thickness_mm": str(sprocket["thickness_mm"]),
+                                              "segmenter": "classical", "sample": "broken-sprocket"})
     assert response.status_code == 200, response.text
     report = response.json()["report"]
     size = report["part"]["size_mm"]
-    # The rebuilt bracket against the intact part's known size (a synthetic image: exact truth).
-    assert abs(size["length"] - bracket["truth"]["length_mm"]) < 0.2
-    assert abs(size["width"] - bracket["truth"]["width_mm"]) < 0.2
+    assert abs(size["length"] - sprocket["truth"]["length_mm"]) < 0.1
+    assert abs(size["width"] - sprocket["truth"]["width_mm"]) < 0.1
     assert report["reconstruction"]["completion"] is not None
-    status = client.get(f"/api/jobs/{response.json()['job_id']}").json()
-    assert status["request"]["sample"] == "broken-bracket" and status["request"]["sample_info"]["kind"] == "synthetic"
+    assert len(report["part"]["holes"]) == 1  # the bore survives the diameter snap
 
 
 def test_a_job_can_be_run_again_from_its_stored_photo(client: TestClient, photo_bytes: bytes) -> None:

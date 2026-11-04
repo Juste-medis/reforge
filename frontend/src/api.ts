@@ -53,6 +53,7 @@ export async function startJob(source: JobSource, options: JobOptions): Promise<
   form.append("thickness_mm", String(options.thickness_mm));
   if (options.bar_x_mm !== undefined) form.append("bar_x_mm", String(options.bar_x_mm));
   if (options.bar_y_mm !== undefined) form.append("bar_y_mm", String(options.bar_y_mm));
+  if (options.known_length_mm !== undefined) form.append("known_length_mm", String(options.known_length_mm));
   form.append("segmenter", options.segmenter);
   form.append("interpreter", options.interpreter);
   form.append("prompt", options.prompt);

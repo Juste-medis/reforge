@@ -27,6 +27,12 @@ WARN_PERSPECTIVE_RATIO = 1.25
 WARN_CLIPPED_BACKGROUND_FRACTION = 0.5  # glare on the part itself is checked at segmentation, where the mask is known
 WARN_HULL_FRACTION = 0.4
 
+# Ruler mode (no mat): the user photographs the part from above on any plain background and enters one measured
+# length. Assumed, and stated everywhere the number is used: a top-down phone shot (within ~10°), the part roughly
+# centred, and a careful reading (1σ 0.5 % on the entered length).
+RULER_READING_REL = 0.005  # 1σ on the entered length
+RULER_TILT_REL = 0.01  # 1σ scale error from hand tilt about top-down
+
 
 @dataclass(frozen=True)
 class CalibrationWarning:
@@ -345,6 +351,34 @@ def calibrate(
         points_px=debiased,
         points_mm=corners_mm,
         corner_bias_px=corner_bias,
+    )
+
+
+def ruler_calibration(image_size: tuple[int, int], px_per_mm: float, known_length_mm: float) -> Calibration:
+    """Scale-only calibration for a mat-less photo: uniform ``px_per_mm`` over the whole frame, no rectification.
+
+    ``page`` is ``"ruler"`` (never a mat size): ``Calibration.layout`` must not be called on it — rectify with an
+    explicit region. ``rms_mm`` is 0: nothing was fitted; the scale uncertainty lives in the budget's scale term
+    (the entered length) and perspective term (tilt, thickness).
+    """
+    if not np.isfinite(px_per_mm) or px_per_mm <= 0:
+        raise ReforgeError("RULER_SCALE_FAILED", "No measurable outline was found to hang the entered length on.",
+                           "Photograph one whole part from above on a plain contrasting background.")
+    return Calibration(
+        page="ruler",
+        image_size=image_size,
+        homography=np.diag([1.0 / px_per_mm, 1.0 / px_per_mm, 1.0]),
+        marker_ids=(),
+        rms_mm=0.0,
+        max_mm=0.0,
+        loo_rms_mm=None,
+        px_per_mm=px_per_mm,
+        perspective_ratio=1.0,
+        scale_correction=(1.0, 1.0),
+        warnings=(CalibrationWarning(
+            "RULER_NO_MAT",
+            f"No mat: the photo is assumed shot from above (within ~10°) and scaled from your {known_length_mm} mm "
+            "length. For the tightest numbers, print the mat and re-shoot."),),
     )
 
 

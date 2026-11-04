@@ -39,11 +39,19 @@ from reforge.spec.partspec import mat_to_model
 from tests.synthetic.scene import (
     PartShape,
     _map_polygon,
+    adjuster_link,
     broken_bracket,
+    broken_bumper_bracket,
     broken_flange,
+    broken_link,
+    broken_mounting_flange,
+    broken_shim,
+    bumper_bracket,
     flange,
     hero_bracket,
     make_camera,
+    mounting_flange,
+    shim,
     silhouette_px,
 )
 
@@ -122,6 +130,34 @@ CASES = (
     Case("20_flange_black_broken", "rendered 50 mm square flange; the break took two of its four holes", 3.0,
          synthetic="flange_broken:2", colour_bgr=(38, 36, 36), rotate_deg=0, tilt=(-3, -4, 2),
          expect="model, rebuilt by mirror with the two lost holes inferred"),
+    Case("21_bumper_graphite_broken", "rendered 94 × 30 mm bumper bracket, graphite; right ear snapped off", 4.0,
+         synthetic="bumper_broken:0", colour_bgr=(62, 60, 58), rotate_deg=0, tilt=(-3, 4, -1),
+         expect="model, rebuilt by mirror"),
+    Case("22_mflange_black_broken", "rendered 56 mm mounting flange; the break took two of its four holes", 5.0,
+         synthetic="mflange_broken:2", colour_bgr=(38, 36, 36), rotate_deg=0, tilt=(-3, -4, 2),
+         expect="model, rebuilt by mirror with the two lost holes inferred"),
+    Case("23_alink_grey", "rendered 80 × 20 mm adjuster link with a 24 × 6.5 mm slot and two Ø6.5 holes", 5.0,
+         synthetic="alink", colour_bgr=(75, 72, 70), rotate_deg=-30, tilt=(3, 4, -2)),
+    Case("24_flange_grey", "rendered 50 mm square flange, Ø22 bore, four Ø5.5 holes", 3.0, synthetic="flange",
+         colour_bgr=(110, 108, 105), rotate_deg=10, tilt=(2, -3, 1)),
+    Case("25_mflange_steel", "rendered 56 mm mounting flange, Ø24 bore, four Ø6.5 holes", 5.0, synthetic="mflange",
+         colour_bgr=(130, 128, 125), rotate_deg=-12, tilt=(-3, 2, 0)),
+    Case("26_bumper_blue", "rendered 94 × 30 mm bumper bracket, two Ø5 holes", 4.0, synthetic="bumper",
+         colour_bgr=(180, 60, 30), rotate_deg=20, tilt=(4, 1, -2)),
+    Case("27_alink_red_broken", "rendered adjuster link with its right ear-tip snapped off", 5.0,
+         synthetic="alink_broken:4", colour_bgr=(50, 45, 190), rotate_deg=0, tilt=(-3, 4, -1),
+         expect="model, rebuilt by mirror"),
+    Case("28_shim_steel", "rendered 64 × 40 mm alignment shim, two Ø5 holes", 1.0, synthetic="shim",
+         colour_bgr=(140, 138, 135), rotate_deg=-25, tilt=(3, -4, 2)),
+    Case("29_shim_grey_broken", "rendered alignment shim with its right end snapped off", 1.0,
+         synthetic="shim_broken:5", colour_bgr=(100, 98, 95), rotate_deg=0, tilt=(-4, 3, 1),
+         expect="model, rebuilt by mirror"),
+    Case("30_washer_red_broken", "rendered washer with a rim segment snapped off past the bore", 2.0,
+         synthetic="washer_broken:6", colour_bgr=(50, 45, 190), rotate_deg=0, tilt=(3, -4, 2),
+         expect="model, rebuilt by mirror"),
+    Case("31_link_yellow_broken", "rendered slotted link with its right ear-tip snapped off", 4.0,
+         synthetic="link_broken:7", colour_bgr=(30, 190, 235), rotate_deg=0, tilt=(-2, 3, -1),
+         expect="model, rebuilt by mirror"),
 )
 
 
@@ -272,6 +308,18 @@ def _rendered(kind: str) -> Polygon:
     raise ValueError(kind)
 
 
+def _meander_cut(cx: float, cy: float, x_keep: float, y_half: float, seed: int) -> Polygon:
+    """The rough chord of ``broken_shim`` (scene.py), for the CENTRE-rendered parts: everything past
+    ``x_keep`` is removed. The caller keeps the cut clear of the holes."""
+    rng = np.random.default_rng(seed)
+    y = np.arange(-y_half, y_half + 0.0001, 0.25)
+    meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
+                  for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
+    x = x_keep + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
+    return Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)),
+                    (cx + 60, cy + y_half), (cx + 60, cy - y_half)])
+
+
 def place_synthetic(case: Case) -> Placed:
     kind, _, seed = case.synthetic.partition(":")
     intact = None
@@ -280,6 +328,33 @@ def place_synthetic(case: Case) -> Placed:
         intact = hero_bracket(LAYOUT) if kind != "bracket" else None
     elif kind == "flange_broken":
         intact, poly = flange(LAYOUT), broken_flange(LAYOUT, seed=int(seed))
+    elif kind in ("bumper", "bumper_broken"):
+        poly = bumper_bracket(LAYOUT) if kind == "bumper" else broken_bumper_bracket(LAYOUT, seed=int(seed))
+        intact = bumper_bracket(LAYOUT) if kind != "bumper" else None
+    elif kind == "mflange_broken":
+        intact, poly = mounting_flange(LAYOUT), broken_mounting_flange(LAYOUT, seed=int(seed))
+    elif kind == "alink":
+        poly = adjuster_link(LAYOUT)
+    elif kind == "alink_broken":
+        intact, poly = adjuster_link(LAYOUT), broken_link(LAYOUT, seed=int(seed))
+    elif kind == "shim":
+        poly = shim(LAYOUT)
+    elif kind == "shim_broken":
+        intact, poly = shim(LAYOUT), broken_shim(LAYOUT, seed=int(seed))
+    elif kind == "flange":
+        poly = flange(LAYOUT)
+    elif kind == "mflange":
+        poly = mounting_flange(LAYOUT)
+    elif kind == "bumper":
+        poly = bumper_bracket(LAYOUT)
+    elif kind == "washer_broken":
+        # Rim segment snapped off along a chord at cx + 8.5: the bore (r6) survives to pin the mirror.
+        intact = _rendered("washer")
+        poly = intact.difference(_meander_cut(CENTRE[0], CENTRE[1], 8.5, 16.0, int(seed)))
+    elif kind == "link_broken":
+        # Right ear-tip snapped off at cx + 31.5: both holes (at ±26) and the slot survive.
+        intact = _rendered("link")
+        poly = intact.difference(_meander_cut(CENTRE[0], CENTRE[1], 31.5, 10.0, int(seed)))
     else:
         poly = _rendered(kind)
     poly = affinity.rotate(poly, case.rotate_deg, origin=CENTRE)

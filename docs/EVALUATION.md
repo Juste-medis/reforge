@@ -654,3 +654,413 @@ scale, edges, height correction; a mirror term for INFERRED geometry).
 - Screen readers: not tested with one. The automated audit above checks labels, roles and contrast, not the experience.
 - WebGL on real GPUs: headless Chromium rendered with SwiftShader.
 - Coverage of ±U on more real parts, and hole diameters on a real part (no real part with holes yet).
+
+## 2026-11-03 (evening) · Automotive-style bundled examples · SYNTHETIC, offline plus live SAM 3.1 + Muse Spark 1.3
+
+The bundled examples looked like toys (bright orange bracket, red link), and the user asked for real parts like the
+ones on OEM catalog sites (7zap, PartSouq, RealOEM and the like). Catalog images themselves are unusable twice over:
+they are the sites' copyrighted content, and they show parts without the calibration mat, so the pipeline could not
+turn them into millimetres by design. Instead the three examples were re-rendered as our own OEM-style parts: dark
+moulded-plastic colours and automotive shapes, still flat, mirror-symmetric and single-thickness, so they stay inside
+the supported family. Same ids, new images, new truth (`assets/samples/samples.json`).
+
+| Example | Part | Truth | Photographed |
+|---|---|---|---|
+| broken-bracket | 94 × 30 mm bumper bracket, graphite; a Ø30 ear + Ø5.0 hole each end | 94.0 × 30.0, 2 × Ø5.0 | 86.8 mm: right ear snapped off |
+| broken-flange | 56 mm mounting flange, black; Ø24 bore, 4 × Ø6.5 on 44 mm | 56.0 × 56.0, Ø24 + 4 × Ø6.5 | 45.6 mm wide: two bolt holes lost |
+| slotted-link | 80 × 20 mm adjuster link, grey; 24 × 6.5 slot, 2 × Ø6.5 | 80.0 × 20.0, 2 × Ø6.5 + slot | intact, at 30° to the mat |
+
+New builders in `tests/synthetic/scene.py` (`bumper_bracket`, `broken_bumper_bracket`, `mounting_flange`,
+`broken_mounting_flange`, `adjuster_link`), wired as cases 21–23 in `tools/make_test_photos.py` (thickness 4 / 5 /
+5 mm). The test set is now 23 photos; `results/classical-geometric.json` was re-run in full, `results/sam-spark.json`
+holds the 3 new live runs (the 20 earlier live rows stay recorded in the 2026-11-02 entry).
+
+Offline (classical + geometric rule, $0), against the intact truth:
+
+| Case | Size vs truth | Holes | Hausdorff / p95 |
+|---|---|---|---|
+| 21 bumper, rebuilt | 93.988 × 30.001 (−0.011, +0.002) | 2 / 2 | 0.033 / 0.007 |
+| 22 flange, rebuilt | 56.024 × 56.011 (+0.024, +0.011) | 5 / 5, 2 inferred | 0.034 / 0.012 |
+| 23 link, as photographed | bbox −0.007, −0.007 | 3 / 3 (slot traced) | 0.014 / 0.008 |
+
+Live (SAM 3.1 + Muse Spark 1.3, standard tier, effort low), same truth:
+
+| Case | Spark's reading | Size vs truth | Holes vs truth | Cost |
+|---|---|---|---|---|
+| 21 bumper, rebuilt | "two-hole mounting strap", extruded_profile | 94.001 × 30.000 (+0.002, +0.001) | Ø4.994, 4.995 vs 5.0 | $0.0171 |
+| 22 flange, rebuilt | "square flange mounting plate", extruded_profile | 56.014 × 56.014 (+0.014, +0.014) | bore Ø23.996 vs 24; bolts Ø6.498, 6.496 observed, Ø6.498, 6.496 inferred vs 6.5 | $0.0197 |
+| 23 link, as photographed | "slotted two-hole linkage strap", extruded_profile | 79.998 × 20.011 (caliper-style) vs 80 × 20 | Ø6.494, 6.494 vs 6.5, slot traced | $0.0145 |
+
+Both broken cases carry the `PROFILE_BAND_SATURATED` refinement warning live (the SAM mask sits slightly off the
+true edge on one side); the refined errors above show it is harmless here. Calibration on all three: 12/12 markers,
+fit RMS 0.006–0.007 mm, no warnings. Full offline suite: 170 passed (including the API test that runs the new
+broken-bracket sample end to end against its new truth); ruff clean; frontend builds. Live spend this session:
+$0.0513. Ledger total: $1.33 of $150.
+
+## 2026-11-03 (night) · Real wanted parts as bundled examples · SYNTHETIC COMPOSITES, offline plus live SAM 3.1 + Muse Spark 1.3
+
+The user found the re-rendered examples unconvincing ("toys", no story) and asked for real car/motorcycle parts,
+pointing at five photos in the gitignored `tmp/wanteds/`. Two photos were usable; the other three are outside the
+supported family by design:
+
+| Wanted photo | Content | Verdict |
+|---|---|---|
+| (3) | Steel chain sprocket, white background, stamped 06A21, 21 teeth | ✅ used: flat, single-thickness, mirror-symmetric |
+| (5) | Cast-iron hub carrier,RGBA cutout, bearing bore + bolt holes | 🟡 composited and measured offline, but Muse Spark refuses it live as 3D (below) |
+| (1) | OEM line drawing of a full engine assembly | ⛔ unsupported: a 3D assembly, not one flat part |
+| (2) | Sparco steering wheel (suede rim + spokes) | ⛔ unsupported: the rim is a torus (3D tube), and 330 mm would not fit the mat |
+| (4) | Turned spacer/bushing, side view of a cylinder | ⛔ unsupported: a 3D cylinder, not a flat top view |
+
+**Composites (`backend/tools/make_wanted_samples.py`, sources and truth in gitignored `tmp/wanted_parts/`).** The
+sprocket photo is tilted ~39°, so the teeth tips are fitted (PCA) and the cutout affine-dewarped before placing it at
+a CHOSEN 70.0 mm outside diameter (a 06A chain's 9.525 mm pitch gives a 21-tooth pitch diameter of 63.9 mm and an OD of
+about 69.7 mm) and a CHOSEN 5.0 mm thickness. The bore opening photographed as a crescent + dark wall, so the bore was
+cut at the fitted disk centre (a turned bore is concentric) with the rim painted over — all recorded in the truth
+file's `provenance`, with `size_basis` / `thickness_basis` marked CHOSEN throughout. `sprocket_broken` snaps the disk
+along a diameter through the bore; `sprocket_intact` is the same cutout whole at 25°; `carrier_intact` puts the hub
+carrier (bolt holes cut via dark-pit flood fill, Ø6.05–6.07 OBSERVED) at a CHOSEN 140 mm / 8 mm. Every file says
+SYNTHETIC COMPOSITE in its label and EXIF.
+
+**Three geometry fixes fell out of the diameter-cut sprocket (all measured against the guard cases first):**
+
+- *Holes rank before outline.* A vertical shifted 0.45 mm along straight edges "matches" 2 mm more outline than the
+  exact one (it pairs the intact end with the break remnant), so `_rank` now sorts by matched holes, then evidence
+  (`reforge/geometry/symmetry.py`). Twin axes closer than 0.3 mm used to merge with a coin flip; they now stay
+  separate and the rule tells them apart by matched holes.
+- *Counterparts are photographed, not uncertain.* A diameter cut mismatches the intact teeth facing the gap too, so
+  they land in the fracture set and the mirror "leaves them uncovered" (12 mm of false exposed fracture). The
+  completion now relabels a photographed fracture point OBSERVED when its mirror is filled and it sits across the part
+  from the invented outline (`FAR_FROM_INVENTED_MM = 20.0`: a real gap runs alongside the invented outline — a
+  flange's missed corner peaks at 10 mm — while a counterpart is across the part — a sprocket's teeth bottom out at
+  34 mm). Small parts (below ~40 mm) with half missing can't clear this and decline safely instead.
+- *A rebuild that rebuilds nothing is rejected up front* (`AXIS_REBUILDS_NOTHING` under 2.0 mm invented), so a
+  crosswise axis that maps the break onto itself can never pass on an empty exposed count.
+
+Also: the test backends and the live test now read the post-mirror-pass vocabulary (`irregular` + `broken`), and the
+API sample test compares axis-aligned boxes (the caliper-style smallest rectangle reads tip-to-tip on a round toothed
+part). The pick/flange-diagonal/crosswise guards all still fail exactly as before (verified trial by trial), and the
+23-photo set re-run matches the 2026-11-02/03 tables (side-broken picks still correctly not rebuilt).
+
+Offline (classical + geometric rule, $0), against the intact truth:
+
+| Case | Size vs truth | Holes | Rebuilt |
+|---|---|---|---|
+| sprocket, broken | 68.986 × 69.876 (−0.052, −0.073) | 1 / 1 (bore) | ✅ half + teeth back |
+| sprocket, intact | 69.169 × 71.066 (−0.027, −0.024) | 1 / 1 | ✅ correctly nothing |
+| carrier, intact | 87.938 × 144.050 (−0.016, −0.027) | 4 / 4 | ✅ correctly nothing |
+
+Live (SAM 3.1 + Muse Spark 1.3, standard tier, effort low), two runs each:
+
+| Case | Spark's reading | Size vs truth | Cost |
+|---|---|---|---|
+| sprocket, broken, r1+r2 | "broken roller chain sprocket" / "roller chain sprocket", extruded_profile | 68.864 × 69.819 both runs (−0.174, −0.130) | $0.0259 + $0.0211 |
+| sprocket, intact, r1+r2 | "roller chain sprocket" / "chain sprocket gear", extruded_profile | 69.168 × 70.989 both runs (−0.028, −0.101) | $0.0229 + $0.0225 |
+| carrier, intact, r1+r2 | refused: "automotive steering knuckle hub carrier" / "automotive steering knuckle", "not uniform flat plate" | — (stable, honest 3D refusal) | $0.0212 + $0.0198 |
+
+Live geometry is bit-identical across runs (deterministic SAM + same Spark axis). On the broken sprocket Spark also
+picked one span the geometry rejected (`FRACTURE_MATCHES_MIRROR`, AI proposes / geometry disposes) and still rebuilt
+662.7 mm² at a 1.30 evidence ratio. The carrier's refusal is correct behaviour — a cast knuckle with bosses is not
+printable from one photo — so it stays out of the bundled examples.
+
+**Bundled examples.** The user asked to keep one example: `broken-flange` is byte-identical (md5-verified).
+`broken-bracket` → `broken-sprocket` and `slotted-link` → `intact-sprocket`, with concrete stories (21 teeth, 06A21
+stamp visible, bore-pinned mirror; the intact twin proves the pipeline invents nothing). The API test runs the new
+broken sprocket end to end against its truth. Full offline suite: 170 passed; ruff clean; frontend builds. Live spend
+this session: about $0.14. Ledger total: $1.47 of $150.
+
+## 2026-11-03 (night, Session 14) · Real photos of real parts as examples; four safety fixes; cutting exports; a photo-textured 3D preview · SYNTHETIC COMPOSITES of freely licensed real photos, live SAM 3.1 + Muse Spark 1.3 (standard tier, effort low)
+
+### 1. Sources: real photos, licences checked
+
+The user asked for real parts, like the ones in OEM parts catalogues (7zap, PartSouq, RealOEM…).
+
+- **Catalogue images are unusable.** They are the sites' copyrighted content, and they show no calibration mat.
+- **The pasted images aren't bundled either.** The photos in `tmp/wanteds/` (pasted from the web: a branded steering
+  wheel, a sprocket, a bushing, a hub carrier, an OEM exploded drawing) are kept out of the public repository. The
+  sprocket composites made from one of them in the previous session were moved to `tmp/samples_removed/`. If the user
+  took that photo, it can go back.
+- **What was used instead:** Wikimedia Commons searched for freely licensed photos (API, licence metadata read per
+  file). Two were used; their credits are in `assets/samples/CREDITS.md` and shown in the app.
+
+| Photo | Author, licence | Part | Size basis |
+|---|---|---|---|
+| `Gasket01.jpg` | Miya.m, CC BY-SA 3.0 | three real gaskets on one sheet | CHOSEN: the round flange gasket at Ø100 mm, the JIS B 2404 10K 20A outside diameter. At that scale its bolt holes are 15.5 mm (standard 15) and its bolt circle 71.7 mm (standard 75). The photo has no ruler, and its tilt is corrected from the flange's ellipse (2.7 % stretch) |
+| `Fixed gear cog.jpg` | John Reaves, public domain | a real 18-tooth cog, stamped "1/8 x 18T" | from the chain standard: ½-inch pitch, 18 teeth, outside diameter 79.65 mm |
+
+**Cleaning the cog** (the photo is angled, so the teeth's side walls and a reflection in the bore show):
+- the toothed outline is intersected with its 17 rotations by 20°;
+- the centre is the circle through the twelve lightening-hole openings, which are on the top face and so free of
+  parallax;
+- the holes are redrawn at their fitted radius and bolt circle;
+- the photo's dark opening pixels left on the brass are inpainted.
+
+**Rejected while preparing:**
+- **Pale-green fibre flange gasket:** low contrast (ΔE 24) leaves its hole traces at 0.21–0.26 mm RMS, so they can't
+  be fitted as circles, and a torn copy can't be rebuilt.
+- **Bicycle sprocket on graph paper:** the grid was too faint to measure the scale from.
+- **Copper racing head gaskets:** too large for the A4 mat at their real size.
+- **A BMW E91 lamp carrier:** the download was refused (HTTP 429).
+
+### 2. Bundled examples, live (SAM 3.1 + Muse Spark)
+
+| Example | Job | Spark read | Outcome | Size vs truth | Time / cost |
+|---|---|---|---|---|---|
+| square gasket (real photo) | `45bde3e8bbef`, `f650a3575c21` | "square flange gasket", "flat square gasket": not broken | measured, 9 holes (the bore + 8 traced passages) | 82.211 × 79.439 vs 82.199 × 79.448 (+0.012 / −0.009) | 34–47 s / $0.019–0.022 |
+| square gasket, a third run | `44c238e51d3f` | "…with central bore": **broken** (a false claim) | **not rebuilt:** `AXIS_ASYMMETRIC` (§3) | same | 40 s / $0.022 |
+| broken cog (real photo, four teeth broken off digitally) | `8be5d9c4fc2e`, `07211afc4b6d` | "toothed chainring sprocket": broken | **not rebuilt:** `AXIS_PARTIAL` after `FRACTURE_EXTENDED` (§3) | 79.72 × 73.23 as photographed (intact 79.64 × 78.82) | 54–74 s / $0.023–0.028 |
+| broken flange (rendered, no photo) | `674c55984ac7`, `bea5bda151b9`, `139aa4dc17a7` | "square flange plate fragment": broken | rebuilt; the 2 lost holes inferred at Ø6.497 and 6.495 (truth 6.5) | 56.015 × 56.012 vs 56 × 56 | 26–33 s / $0.019–0.020 |
+
+Before the fixes in §3, one cog run (`2fb1a899537b`) was "rebuilt" at 78.82 × 78.00: a **partial** rebuild accepted
+as complete. It is why the fixes exist.
+
+### 3. What the real photos exposed, and the fixes
+
+1. **The "counterpart" relabelling is withdrawn** (`geometry/completion.py`).
+   - **What it did:** the previous session relabelled photographed fracture points OBSERVED when they lay more than
+     20 mm from the invented outline, so that sprocket teeth facing a diameter break wouldn't count as an uncovered
+     fracture.
+   - **How it failed:** on a long tear (a torn flange gasket, rebuilt by a slightly wrong axis) it labelled the
+     uncovered tear "measured from the photo", and the partial rebuild passed every check.
+   - **A replacement also failed:** a mirror-source rule passed a lengthwise-snapped pick's own fracture (an existing
+     test caught it).
+   - **Decision:** no relabelling. A photographed fracture edge stays UNCERTAIN, so the exposed-fracture check sees it.
+     A broken toothed part is declined rather than half-rebuilt under a wrong label. The bundled sprocket composites
+     now decline too (offline).
+2. **New guard `AXIS_ASYMMETRIC`** (`reasoning/reconstruct.py`): no rebuild when the mirror differs from the part
+   away from any fracture by more than 0.35 × what it would add next to the break.
+   - **The case behind it:** the real square gasket is not perfectly symmetric. The geometric rule (offline) added
+     98 mm² next to rough spots while 70 mm² of asymmetry sat elsewhere.
+   - **Result:** declined offline, and declined live when Spark claimed a break on it (`44c238e51d3f`).
+3. **A mirrored hole that straddles the fracture is inferred.** A hole the break cut in half leaves a notch that the
+   mirror fills. The hole now comes back if it lies in the completed part and at least 20 % in the added material;
+   before, the area was rebuilt solid.
+4. **The accepted fracture is extended** over neighbouring rough segments and the short smooth stretches (≤ 10 mm)
+   between them (`FRACTURE_EXTENDED`).
+   - **Why:** the decomposer cuts one rough edge into rough and short smooth pieces, and the AI's picks or the rule's
+     can cover only part of a break. The uncovered rest was then left OBSERVED.
+   - **Result:** the exposed-fracture check now sees the whole break, and turned the cog's partial rebuild into an
+     honest `AXIS_PARTIAL`.
+
+**Tests:** all pass (offline suite: §6).
+- The previous session's guards still hold: the side-broken pick isn't rebuilt, the flange's diagonal and crosswise
+  axes are corrected, the intact reading isn't overridden.
+- The real-gasket example is checked end to end in the API test: within 0.1 mm, 9 holes, nothing rebuilt.
+
+### 4. Cutting exports (`cad/flat.py`)
+
+The part's flat pattern, for parts cut from sheet (gaskets, shims, plates), with the fit compensation applied:
+- `model.dxf`: AutoCAD R12 (AC1009), `$INSUNITS` 4 (mm), a closed POLYLINE outline, CIRCLE holes, POLYLINE non-round
+  holes, on layers OUTLINE and HOLES;
+- `model.svg`: true size, width and height in mm, hairline cut paths.
+
+**Tests:**
+- `ezdxf` 1.4.5 (a dev dependency) reads the DXF back. The outline area equals the spec's within 10⁻⁶ relative, and
+  the hole radii are exact.
+- The SVG's width is the part's plus the 2 mm margins.
+- With the compensation, every hole grows by its value and the outline area shrinks.
+
+### 5. Photo-textured 3D preview
+
+- **What the report gives:** the affine map from model mm to `photo.jpg` pixels, a `texture.jpg`, and the part's
+  median colour, measured on the photo.
+- **What `texture.jpg` is:** the rectified photo where the part was photographed, ember wherever it was rebuilt,
+  decided per pixel against the photographed outline.
+- **The viewer:** it UV-maps the texture onto the top face and gives the walls the measured colour.
+- **Check:** the spec outline projected through the map lands on the part's photographed edges (overlay checked by
+  eye on the rendered flange).
+- **Toggle:** "Photo" switches back to the neutral render.
+
+### 6. UI and suite
+
+- **Offline suite:** 172 passed; ruff clean.
+- **Browser:** no page overflow at 390 px on home and the three results; no console errors.
+- **Accessibility:** axe-core reports 0 violations on home, new repair, my repairs and the results. A locked "Cut it"
+  badge failed contrast (1.97:1) before it was restyled.
+- **Spend:** the ledger shows $0.90 today (92 calls) and $1.77 in total of the $150.
+
+### 7. Limits this entry adds
+
+- Toothed outlines (sprockets, gears) are not rebuilt when broken: the outline alone can't tell intact teeth facing
+  the gap from the fracture.
+- Pale parts on the white mat (ΔE below about 25) trace their holes too roughly to fit circles.
+- The gasket's size is a CHOSEN scale (no ruler in its photo). The cog's comes from a standard, not a measurement.
+
+## 2026-11-03 (late night) · Successes-only gallery: the sprocket rebuild restored, the cog honestly out · SYNTHETIC COMPOSITES, offline plus live SAM 3.1 + Muse Spark 1.3
+
+The user rejected declined broken parts as demo samples ("everything must work and be well reconstructed") and asked
+for a homepage section of all successes instead of three fixed demos. The sample bar is now: broken → must rebuild
+against its truth, intact → must measure against it with nothing invented.
+
+**Counterpart relabelling v2 (`geometry/completion.py`).** Session 14 withdrew v1 (far-from-invented only) after a
+transient torn-gasket case let a partial rebuild pass. Its exact geometry was never committed; a regenerated
+approximation (`/tmp/make_torn.py`, kept out of the repo) rebuilds size-perfect with one bolt hole silently missing —
+a reporting gap, not an exposed-fracture hole. v2 answers the withdrawal with a third gate: a photographed fracture
+point is OBSERVED only when it is far from every INFERRED point (> 20 mm), its mirror is filled, AND its mirror lies
+ON the invented outline (≤ 0.2 mm) rather than deep inside the fill. A wrong axis drops mirrors inside; accidental
+tangencies leak millimetres at most, never a whole tear. Measured: sprocket exposed 12.0 → 0.2 mm (rebuilds);
+flange-diagonal / pick / crosswise trials unchanged (all still rejected); torn approximation unchanged (still rebuilds
+at the right size). Plus a loud `HOLES_UNPAIRED` warning whenever a rebuild leaves holes without a mirror partner, so
+a partial can never pass silently again.
+
+**Why the chipped cog stays out (measured both directions).** The Commons cog's four ragged teeth (roughness 0.5 mm)
+are detected and filled (41 mm invented), but ~10 mm of ragged chip edge stays exactly uncovered → honest
+`AXIS_PARTIAL`. Smoothing the chip (roughness 0.15 mm) is backwards: the chip then matches its mirror, the fracture
+set collapses to 5–9 mm, the mirror invents nothing, and `AXIS_REBUILDS_NOTHING` fires. Small ragged chips are below
+the mirror's exact-cover ability either way; files kept under gitignored `tmp/declined_samples/`. A diameter-style
+cog break would rebuild by the sprocket mechanism (not done: same demo twice).
+
+**Gallery (4 samples, `tools/make_samples.py` now bundles `--tests` + `--wanteds` + `--composites`).** The
+user-supplied sprocket photos are back with the user's permission (no Commons licence claimed; `provided_by: user`
+travels in the manifest and the API test). Flange and gasket bytes are md5-identical to Session 14.
+
+| Example | Offline (classical + rule) | Live (SAM + Spark) |
+|---|---|---|
+| broken flange (rendered) | ✅ rebuilt 56.031 × 56.024, 5/5 holes | ✅ (Session 14) 56.015 × 56.012, lost Ø6.497/6.495 |
+| broken sprocket (user photo) | ✅ rebuilt 68.986 × 69.876 vs 69.038 × 69.949 | ✅ 68.864 × 69.819, "broken roller chain sprocket", $0.0225 |
+| intact sprocket (user photo) | ✅ 69.169 × 71.066, nothing rebuilt | ✅ 69.168 × 70.989, nothing rebuilt, $0.0219 |
+| square gasket (Commons) | ✅ 82.211 × 79.439, 9/9 holes, nothing rebuilt | ✅ (Session 14) +0.012/−0.009 |
+
+Truth in the manifest is caliper-style (smallest rectangle), computed from each composite's intact outline, so the API
+test compares like with like (sprocket: 70.176 × 68.264 vs 70.23 × 68.31). Homepage section reframed as successes.
+Suite: 172 passed; ruff clean; frontend builds. Live spend this session: about $0.07 (incl. a third stable carrier
+refusal). Ledger total: $1.92 of $150.
+
+## 2026-11-04 (night) · Twenty verified samples: wave-2 rendered parts, a live-verified Commons gasket, honest drops · SYNTHETIC COMPOSITES, offline plus live SAM 3.1 + Muse Spark 1.3
+
+The user asked for at least 20 well-tested samples with the model corrected and adapted, ~25 % from their own
+`tmp/` photos. Delivered: 20 bundled samples, every one verified offline (classical + geometric rule) and live
+(SAM 3.1 + Spark 1.3, standard tier). Tmp quota honesty: every user photo was inventoried (wanteds pastes, realphotos,
+realphotos.2, realpictures, heart/bars); only the two sprocket composites qualify (flat, single-thickness,
+mirror-symmetric). The engine diagram, steering wheel, lock cylinder, vape pen, calipers, key, screwdriver and cone
+are 3D, non-flat or non-parts, so the gallery holds 2/20 user photos (10 %) — all that qualify — documented here
+rather than padded.
+
+**Wave-2 rendered (6/6 live ✅).** New builders in `tests/synthetic/scene.py` (`broken_link`, `shim`,
+`broken_shim`); intact flange/mflange/bumper now have cases too. Lesson re-learned and applied: an end snap must
+fall *past* the last hole (both holes survive to pin the mirror, as the bracket does) — cutting through the hole
+leaves a single circle whose partner is lost, and the vertical axis keeps support 0.06 with nothing to match
+(beige-half disease, measured on 27/29 before the fix).
+
+| Example | Offline | Live (SAM + Spark) |
+|---|---|---|
+| 24 flange 50 mm | ✅ −0.002/−0.010, 5/5 | ✅ "square flange mounting plate", $0.0158 |
+| 25 mounting flange 56 mm | ✅ −0.012/−0.010, 5/5 | ✅ "square four-hole flange plate", $0.0172 |
+| 26 bumper bracket | ✅ −0.001/−0.002, 2/2 | ✅ "two-hole link arm", $0.0146 |
+| 27 adjuster link, ear-tip off | ✅ rebuilt +0.010/+0.022, 3/3 | ✅ rebuilt, "slotted mounting bracket plate", $0.0171 |
+| 28 shim 1 mm | ✅ −0.012/−0.004, 2/2 | ✅ "rectangular mounting plate", $0.0154 |
+| 29 shim, end off | ✅ rebuilt +0.016/+0.009, 2/2 | ✅ rebuilt, "rectangular two-hole mounting plate", $0.0165 |
+
+**Green Commons gasket (live ✅).** `green_gasket` (Gasket01.jpg, Miya.m, CC BY-SA 3.0): offline 99.939 × 99.932
+vs Ø100 truth, 5/5 circles within 0.05 mm; live "circular flange gasket", $0.0177, nothing rebuilt. Bundled as
+`green-gasket`.
+
+**Honest drops (all measured, none bundled).** Blue gasket: reflection streak fragments the mask (extra void +
+merged hole) — inpainting would idealise real edges. Beige Pakking: mirrored, the doubled shadow reads as
+background (SAM, 20 mm short); single lobe, the straight cut edge reads as a cropped photo (Spark
+FAMILY_UNSUPPORTED). Carrier: Spark correctly refuses a 3D cast knuckle ("protruding bosses and varying depth").
+A snapped-off half cannot rebuild by mirror support (nothing survives to match) — the pipeline's honest answer,
+documented, not worked around.
+
+Suite: 172 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 20. Live spend this session:
+about $0.22 (wave-2 $0.10, green/beige/carrier probes $0.12).
+
+## 2026-11-04 (dawn) · 25 % user photos: heart pair, second heart shot, second sprocket break · SYNTHETIC COMPOSITES, offline plus live SAM 3.1 + Muse Spark 1.3
+
+Tmp quota completed honestly: the gallery goes 20 → 24 with four user-photo samples (6/24 = 25 %): the sprocket
+breaks a second way, and the engraved metal heart (caliper: 51.8 mm wide, `tmp/coeur_a_mesurer.jpg`) comes intact,
+chipped, and from a second mat photo. The real trinket is hand-finished (±1 mm) and shot slightly off vertical, so
+both heart outlines are symmetrised (union with mirror, as cast) before placing — photo texture untouched.
+
+| Example | Offline | Live (SAM + Spark) |
+|---|---|---|
+| heart 51.8 mm | ✅ −0.04/−0.04, 0/0 | ✅ "Heart-shaped Disneyland Paris pin", $0.0158 |
+| heart, lobe-tip off | ✅ rebuilt −0.05/−0.04 | ✅ rebuilt, "metal souvenir fragment", $0.0218 |
+| heart 2nd shot | ✅ −0.015/−0.018, 0/0 | ✅ "Mickey Mouse shaped pin", $0.0198 |
+| sprocket, 2nd break | ✅ rebuilt −0.06/−0.04, 1/1 | ✅ rebuilt, "roller chain sprocket 21 tooth", $0.0235 |
+
+Two honest outcomes. The key (IMG_1069) models offline (Δ 0.05) but Spark's family verdict flips between runs
+(refused once as milled/grooved, accepted once) and SAM undershoots the teeth by 0.9 mm: dropped, kept as a
+builder job. The heart's live chip needed a smoother fracture (0.3 mm roughness; the 0.5 mm edge read too rough
+on SAM's outline): a FRACTURE_CORRECTED pipeline retry was prototyped for the resulting superset, then reverted —
+the sample-side fix sufficed and no synthetic trigger reproduces sub-render photo roughness honestly.
+
+Suite: 172 passed, 3 deselected; ruff clean; frontend builds (0 errors); gallery shows all 24. Live spend this
+addendum: about $0.10.
+
+## 2026-11-04 (day) · tmp/realpicts: 12 vendor shots probed, key blade admitted (25 samples, 28 % user) · SYNTHETIC COMPOSITES, offline plus live SAM 3.1 + Muse Spark 1.3
+
+The user dropped 12 vendor-style product shots in `tmp/realpicts` (no mat, no scale). Raw pipeline probe: 12/12
+CAL_MARKERS_INSUFFICIENT, $0 — expected, not a product bug: without a mat there is no calibration. Eleven are
+3D/non-flat parts (wheel, alternator, intercoolers, tail light, damper, spark plug, cone filter, spring, turbo) and
+stay out of the flat-family demos by design. Two flat candidates were cut out and composited on the mat rig:
+
+| Example | Offline | Live (SAM + Spark) |
+|---|---|---|
+| key blade (blank) 50 mm | ✅ −0.34/−0.95, 0/0 (classical undershoots bright metal) | ✅ "narrow flat plastic tab", Δ −0.03/−0.06, $0.0266 — ADMITTED |
+| panel air filter 150 mm | ✅ −0.015/−0.03, 0/0 | ⛔ Spark refuses: "panel engine air filter, 30 mm composite with pleated media" — honest decline, DROPPED |
+
+Blade work: the 42 % fob crop still caught the fob and a notch-hole; a 38 % crop gives a clean blade + stepped
+shoulder, 0 holes. The panel filter is angled in its product shot, so its outline was symmetrised as made (same
+treatment as heart2). No pipeline change was needed: both live verdicts are correct behaviour, and the pale blade
+shows SAM segments semantics, not just contrast.
+
+Suite: 172 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 25. Live spend this addendum:
+about $0.17 modelled (full wanted re-verify: 10 jobs, only panel + blade are new) plus 3 Spark family verdicts.
+
+## 2026-11-04 (day) · every breakable part broken: 28 samples, 13 broken · SYNTHETIC COMPOSITES, offline plus live SAM 3.1 + Muse Spark 1.3
+
+The user asked why not every demo works broken. Three symmetric intact-only parts got broken twins (all live-verified);
+two parts cannot break by mirror, ever; one honest boundary was mapped and documented instead of worked around.
+
+| Example | Offline | Live (SAM + Spark) |
+|---|---|---|
+| washer, rim segment off (case 30) | ✅ rebuilt ±0.003, 1/1 | ✅ "broken flat washer fragment", +0.001/+0.002, $0.0195 — ADMITTED |
+| slotted link, ear-tip off (case 31) | ✅ rebuilt +0.024/+0.045, 3/3 | ✅ "yellow perforated mounting strap", same Δ, $0.0157 — ADMITTED |
+| heart 2nd shot, left tip off | ✅ rebuilt −0.03/−0.025, 0/0 | ✅ "Disney figurine base fragment", values match transposed, $0.018 — ADMITTED |
+| square gasket, corner torn off | ❌ no completion (classical) | ⛔ diagonal A1 at 100 % restores the corner but the torn traced passage never pairs back (0.48 mm short, 8/9 holes) — DROPPED |
+| square gasket, 2.4 mm tab tear | ✅ rebuilt (classical, rough) | ⛔ AXIS_WEAK: a hole-free chip drowns in rubber grain — DROPPED |
+
+Why not all. The L-plate (an L has no mirror axis) and the key blade (asymmetric blank) cannot rebuild by mirror: a
+mathematical fact, not a bug. Intact demos stay on purpose: they prove the pipeline invents nothing on whole parts.
+The square gasket drew the honest boundary: traced (non-circular) holes don't pair (`reconstruct._holes` keeps fitted
+circles only), so a break that takes one can't be completed — the diagonal axis itself was perfect (support 100 %,
+RMS 0.08 mm). And the passages blanket the part (≤2.4 mm clearance in every direction), so no surviving-all-holes
+chip rises above the photo grain live. Teaching the mirror to pair and infer traced-polygon holes is real future work
+(polygon `InferredHole` through completion, model builder and verification), deliberately not rushed on deadline day.
+
+Suite: 172 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 28 (8/28 = 28.6 % user tmp). Live
+spend this addendum: about $0.12 (3 admissions + 2 square probes + 1 re-verify).
+
+## 2026-11-04 (day) · ruler mode (mat optional) + 8 user .casse, all honestly declined · 🟡 SYNTHETIC + LIVE SAM 3.1 + Muse Spark 1.3
+
+The mat is now optional (ruler mode, 🟡 implemented, unverified on real photos): the user photographs the part
+straight from above on any plain background and enters its longest side, measured with a ruler. The outline's longest
+pixel side carries that length; tilt is assumed within ~10° of top-down, the top-face geometry is used directly (no
+height correction), and the budget carries the widened terms (reading 0.5 % 1σ, tilt 1 % 1σ, thickness parallax).
+Synthetic proof: an 80 × 28 mm bracket drawn top-down at 10 px/mm recovers 80/28 within the 1.2 mm test band, and the
+same photo without a length still declines CAL_MARKERS_INSUFFICIENT. Covered by 3 maintained tests (2 pipeline, 1 API).
+
+The user broke 8 vendor shots (`tmp/realpicts/*.casse.png`) and asked the model to do everything possible. It did:
+full pipeline in ruler mode at plausible CHOSEN scales, offline (silhouettes measured as flat: the geometric rule has
+no 3D semantics) then live SAM 3.1 + Spark 1.3. All 8 decline FAMILY_UNSUPPORTED, each correctly named — including the
+damage ("torn shock absorber", "broken spark plug"):
+
+| .casse | Live Spark reading | Why no rebuild |
+|---|---|---|
+| steel wheel, blob out | "steel car wheel rim" | 150 mm deep dished 3D, colour spread from shading |
+| shock absorber, torn | "torn automotive shock absorber" | 3D tubular assembly with eye mounts |
+| key fob, chipped | "flip car key fob" | 3D fob with blade, buttons, PCB |
+| tail light, smashed | "truck tail light assembly" | 80 mm 3-colour optical housing, ΔE 46 |
+| cone filter, torn | "conical pleated air filter" | 3D cone, 130 mm thick |
+| panel filter, corner off | "rectangular panel air filter" | frame + pleated media, 30 mm, two-colour |
+| spark plug, crushed | "broken spark plug" | multi-material: threads, hex, ceramic, electrode |
+| coil spring, coil cut | "coil compression spring" | 3D helical wire |
+
+Single-photo 3D reconstruction of arbitrary broken parts is a different product (multi-view/3D priors); Re-Forge's
+contract stays flat parts, and the honesty gate is the feature: it names the damage instead of hallucinating a flat
+extrusion. Nothing admitted; gallery goes 28 → 19 (8/19 = 42 % user tmp) after removing the 3 named samples plus 6
+more intact synthetics with broken twins. Hero is now the real broken sprocket (user photo): 70.08 × 68.26 mm,
+663 mm² rebuilt, ±0.39 mm, live SAM + Spark $0.024.
+
+Suite: 175 passed (3 new), 3 deselected; ruff clean; frontend builds; gallery shows all 19. Live spend this addendum:
+about $0.19 (8 casse verdicts + hero run).

@@ -62,15 +62,18 @@ class HoleCandidate:
     fit: CircleFit | None = None  # set by the height correction for round holes; otherwise fit ``contour``
     paper_delta_e: float = 0.0  # 90th percentile ΔE of the hole's core from the paper around it
     compactness: float = 1.0
+    background_word: str = "mat paper"  # ruler mode (no mat) says "background" instead
 
     @property
     def doubt(self) -> str | None:
         """Why this candidate may not be a through-hole, or None."""
         if self.glare_suspect:
-            return "brighter than the mat paper: possibly glare, not a hole, so it was left out of the model"
+            return (f"brighter than the {self.background_word}: possibly glare, not a hole, so it was left "
+                    "out of the model")
         if self.paper_delta_e > HOLE_MAX_PAPER_DELTA_E and self.compactness < HOLE_MIN_COMPACTNESS:
-            return (f"doesn't look like the mat paper seen through the part (ΔE {self.paper_delta_e:.0f}) and isn't "
-                    "round: possibly a reflection or a mark, not a hole, so it was left out of the model")
+            return (f"doesn't look like the {self.background_word} seen through the part "
+                    f"(ΔE {self.paper_delta_e:.0f}) and isn't round: possibly a reflection or a mark, not a hole, "
+                    "so it was left out of the model")
         return None
 
 
@@ -122,11 +125,13 @@ def refine_profile(
     band_mm: float = 0.3,
     min_hole_area_mm2: float = 0.8,
     background_margin_mm: float = 2.0,
+    on_mat: bool = True,
 ) -> RefinedProfile:
     image = view.image
     if image.ndim != 3:
         raise ReforgeError("IMAGE_INVALID", "Boundary refinement needs a colour (BGR) rectified view.")
     mask = np.asarray(coarse_mask).astype(bool)
+    paper_word = "mat paper" if on_mat else "background"  # user-visible wording only; the math is identical
     if mask.shape != image.shape[:2]:
         raise ReforgeError("PROFILE_MASK_SHAPE", f"Mask shape {mask.shape} != view shape {image.shape[:2]}.")
     if not mask.any():
@@ -144,8 +149,9 @@ def refine_profile(
     eroded = cv2.erode(m8, kernel).astype(bool)
     background = ~cv2.dilate(m8, _disk(max(band_px + 1, int(np.ceil(background_margin_mm * s))))).astype(bool)
     if background.sum() < MIN_BACKGROUND_PIXELS:
-        raise ReforgeError("PROFILE_NO_BACKGROUND", "Too little visible mat around the part.",
-                           "Centre the part in the mat's free zone with space around it.")
+        raise ReforgeError("PROFILE_NO_BACKGROUND", f"Too little visible {paper_word} around the part.",
+                           "Centre the part in the mat's free zone with space around it."
+                           if on_mat else "Frame the whole part with space around it.")
 
     image = image if image.dtype == np.uint8 else np.clip(image, 0, 255).astype(np.uint8)
     lab = cv2.cvtColor(image.astype(np.float32) / 255.0, cv2.COLOR_BGR2Lab)
@@ -161,8 +167,8 @@ def refine_profile(
         warnings.append(ProfileWarning(
             "PROFILE_NONUNIFORM_COLOUR",
             f"The part isn't one uniform colour (spread ΔE {spread:.0f}): the edge model assumes a single-colour part "
-            "on the mat, so edges may be traced wrong. Painted, rusty, printed or multi-material parts aren't "
-            "supported yet."))
+            f"{'on the mat' if on_mat else 'on a plain background'}, so edges may be traced wrong. Painted, rusty, "
+            "printed or multi-material parts aren't supported yet."))
     # Everything in the view that isn't mat paper, ignoring specks: the traced part should account for most of it.
     not_paper = (np.linalg.norm(lab - paper, axis=2) > NOT_PAPER_DELTA_E).astype(np.uint8)
     not_paper = cv2.morphologyEx(not_paper, cv2.MORPH_OPEN, _disk(max(1, int(round(0.5 * s)))))
@@ -170,8 +176,9 @@ def refine_profile(
     if share < MIN_PART_SHARE_OF_NOT_PAPER:
         warnings.append(ProfileWarning(
             "PROFILE_PARTIAL",
-            f"The traced part covers only {share:.0%} of what isn't mat paper. Is the part one uniform colour, alone "
-            "on the mat? A multi-coloured or textured object is traced only in pieces."))
+            f"The traced part covers only {share:.0%} of what isn't {paper_word}. Is the part one uniform colour, "
+            f"alone {'on the mat' if on_mat else 'on a plain background'}? A multi-coloured or textured object is "
+            "traced only in pieces."))
     refined = contrast >= MIN_CONTRAST_DELTA_E
     if refined:
         light = srgb_to_linear(image)
@@ -181,8 +188,8 @@ def refine_profile(
     else:
         warnings.append(ProfileWarning(
             "PROFILE_LOW_CONTRAST",
-            f"Part and mat differ by only ΔE {contrast:.1f}; the segmenter's boundary is kept unrefined. "
-            "Use a contrasting background for light-coloured parts."))
+            f"Part and {'mat' if on_mat else 'background'} differ by only ΔE {contrast:.1f}; the segmenter's "
+            "boundary is kept unrefined. Use a contrasting background for light-coloured parts."))
         t = mask.astype(np.float32)
 
     # Through-hole seeds: paper-coloured regions well inside the part.
@@ -251,7 +258,8 @@ def refine_profile(
         paper_de = float(np.percentile(np.linalg.norm(diff, axis=1), 90))
         polygon = Polygon(pts)
         compact = float(4 * np.pi * polygon.area / polygon.length**2) if polygon.length > 0 else 0.0
-        holes.append(HoleCandidate(f"H{len(holes)}", Contour(pts, areas[i]), agrees, glare, None, paper_de, compact))
+        holes.append(HoleCandidate(f"H{len(holes)}", Contour(pts, areas[i]), agrees, glare, None, paper_de,
+                                     compact, paper_word))
 
     coarse_edge = m8 - cv2.erode(m8, _disk(1))
     distance = cv2.distanceTransform((1 - coarse_edge).astype(np.uint8), cv2.DIST_L2, 5)

@@ -10,6 +10,7 @@ import { defaultAi, launch, previewFor } from "../lib/launch";
 import { href } from "../lib/route";
 import type { ApiErrorBody, Dimension, Files, Health, JobStatus, Report, Sample } from "../types";
 import { Advanced } from "./Advanced";
+import { Credit } from "./Home";
 
 const StlViewer = lazy(() => import("../components/StlViewer"));
 const POLL_MS = 700;
@@ -214,6 +215,7 @@ function KnownAnswer({ sample, report }: { sample: Sample; report: Report }) {
     <section className="card known" aria-labelledby="known-title">
       <h2 id="known-title" className="card-title">Known answer</h2>
       <p className="muted small">{sample.label} Truth: {t.basis}; {t.photographed}.</p>
+      {sample.credit && <Credit credit={sample.credit} />}
       <div className="table-wrap">
       <table className="table">
         <thead><tr><th>Size</th><th>True</th><th>Re-Forge</th><th>Difference</th><th>Within ±U?</th></tr></thead>
@@ -235,7 +237,7 @@ function KnownAnswer({ sample, report }: { sample: Sample; report: Report }) {
       </table>
       </div>
       <p className="muted small">
-        Holes in the true part: {t.holes.map((h) => (h.diameter_mm ? `${h.count} × Ø${fmt(h.diameter_mm, 1)} mm` : `${h.count} slot ${h.slot_mm?.join(" × ")} mm`)).join(", ")}.
+        Holes in the true part: {t.holes.map((h) => (h.diameter_mm ? `${h.count} × Ø${fmt(h.diameter_mm, 1)} mm` : h.shape ? `${h.count} ${h.shape}${h.count > 1 ? "s" : ""}` : `${h.count} slot ${h.slot_mm?.join(" × ")} mm`)).join(", ")}.
         Re-Forge built {report.part.holes.length} hole(s): {report.part.holes.map((h) => (h.kind === "circle" ? `Ø${fmt(h.diameter_mm, 2)}` : "a traced slot")).join(", ") || "none"}.
       </p>
     </section>
@@ -301,8 +303,15 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
   }, [files]);
 
   const viewerDims = useMemo(() => ({ length: size.length, width: size.width }), [size.length, size.width]);
+  const photoTexture = useMemo(() => {
+    const t = report.texture;
+    const url = t ? files[t.image] : undefined; // texture.jpg; reports from before it existed name photo.jpg
+    return t && url ? { ...t, url } : null;
+  }, [report.texture, files]);
   const stlUrl = modelUrl(files["model.stl"], allowance);
   const scadUrl = modelUrl(files["model.scad"], allowance);
+  const dxfUrl = files["model.dxf"] ? modelUrl(files["model.dxf"], allowance) : null;
+  const svgUrl = files["model.svg"] ? modelUrl(files["model.svg"], allowance) : null;
 
   async function chooseAllowance(value: number) {
     setAllowanceError(null);
@@ -328,7 +337,7 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
     <div className="result">
       <section className={`verdict verdict-${tone}`}>
         <div className="verdict-copy">
-          <p className="eyebrow">{name}{sample && <span className="flag">Synthetic example</span>}</p>
+          <p className="eyebrow">{name}{sample && <span className="flag">{sample.rendered ? "Rendered example" : "Example: real photo, composited"}</span>}</p>
           <h1>{verdict.title}</h1>
           <p className="lead">{verdict.text}</p>
         </div>
@@ -342,7 +351,7 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
       <div className="result-visuals">
         <section className="card card-flush viewer-card" aria-label="3D model">
           <Suspense fallback={<div className="viewer"><div className="viewer-status"><Spinner /> Loading the 3D viewer…</div></div>}>
-            <StlViewer url={stlUrl} lines={lines} angleDeg={size.angle_deg} dims={viewerDims} />
+            <StlViewer url={stlUrl} lines={lines} angleDeg={size.angle_deg} dims={viewerDims} texture={photoTexture} />
           </Suspense>
         </section>
         <section className="card card-flush compare-card" aria-label="Before and after">
@@ -378,8 +387,10 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
           <p className="muted small">
             Length and width are the sides of the smallest rectangle that fits around the part.
             ± values are 2σ estimates from this photo's error budget, not guarantees.
-            {dominant === "print scale" && !budget.scale_checked && " Most of it comes from the unchecked print scale: measuring the mat's two bars once tightens it."}
-            {dominant === "calibration" && " Most of it comes from the mat not lying perfectly flat."}
+            {dominant === "print scale" && !budget.scale_checked && (report.calibration.mode === "ruler"
+              ? " Most of it comes from the entered length and the assumed top-down view: a shot on the printed mat tightens it."
+              : " Most of it comes from the unchecked print scale: measuring the mat's two bars once tightens it.")}
+            {dominant === "calibration" && report.calibration.mode !== "ruler" && " Most of it comes from the mat not lying perfectly flat."}
           </p>
           {warnings.length > 0 && (
             <div className="photo-notes">
@@ -437,9 +448,24 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
                 <span><strong>Edit it</strong><span className="muted">OpenSCAD source: every dimension is a named value at the top, with where it came from.</span></span>
               </a>
             </li>
+            {dxfUrl && svgUrl && (
+              <li>
+                <div className={`file file-pair ${exportReady ? "" : "is-locked"}`}>
+                  <span className="file-ext file-ext-cut">CUT</span>
+                  <span>
+                    <strong>Cut it</strong>
+                    <span className="muted">For parts cut from sheet, like a gasket or a shim. True size, in millimetres.</span>
+                    <span className="file-links">
+                      <a href={exportReady ? dxfUrl : undefined} aria-disabled={!exportReady} download>DXF<span className="muted"> · laser, waterjet, CNC</span></a>
+                      <a href={exportReady ? svgUrl : undefined} aria-disabled={!exportReady} download>SVG<span className="muted"> · cutting plotter</span></a>
+                    </span>
+                  </span>
+                </div>
+              </li>
+            )}
             <li>
               <a className="file" href={files["report.json"]} download>
-                <span className="file-ext">JSON</span>
+                <span className="file-ext file-ext-json">JSON</span>
                 <span><strong>The evidence</strong><span className="muted">Every number with its status, uncertainty and source.</span></span>
               </a>
             </li>
