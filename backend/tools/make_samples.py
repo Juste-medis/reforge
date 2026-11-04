@@ -98,21 +98,6 @@ SAMPLES = [
      "story": "A 64 × 40 mm alignment shim with its right end snapped off past the hole. Both holes survive the break, "
               "mirror brings the end back.",
      "thickness_mm": 1.0, "round_holes": "all", "photographed": "60.5 mm long: the right end snapped off"},
-    {"id": "heart", "srcdir": "wanteds", "source": "heart_intact",
-     "title": "Metal heart, intact (user photo)",
-     "story": "A real engraved metal heart from the user's mat photo, measured 51.8 mm wide with a caliper. "
-              "Traced as photographed: nothing rebuilt.",
-     "thickness_mm": 3.0, "round_holes": "all", "provided_by": "user", "photographed": "whole on the mat"},
-    {"id": "broken-heart", "srcdir": "wanteds", "source": "heart_broken",
-     "title": "Metal heart, lobe-tip chipped off (user photo)",
-     "story": "The same heart with its right lobe-tip chipped off. Symmetric by blank, so the mirror rebuilds "
-              "the missing tip.",
-     "thickness_mm": 3.0, "round_holes": "all", "provided_by": "user", "photographed": "right lobe-tip chipped off"},
-    {"id": "heart-second-shot", "srcdir": "wanteds", "source": "heart2_intact",
-     "title": "Metal heart, second photo, intact",
-     "story": "The same trinket from the user's second mat photo (stronger angle, outline symmetrised as cast). "
-              "Measured whole.",
-     "thickness_mm": 3.0, "round_holes": "all", "provided_by": "user", "photographed": "whole on the mat"},
     {"id": "broken-sprocket-r2", "srcdir": "wanteds", "source": "sprocket_broken_r2",
      "title": "Chain sprocket, other side snapped off (user photo)",
      "story": "The same real 21-tooth sprocket with another side snapped off. The bore stays round, the teeth "
@@ -133,11 +118,109 @@ SAMPLES = [
      "story": "A 70 × 18 mm link with its right ear-tip snapped off past the hole. Both holes and the "
               "slot survive, so the mirror brings the tip back.",
      "thickness_mm": 4.0, "round_holes": "all_but_largest", "photographed": "67.9 mm long: the ear-tip snapped off"},
-    {"id": "broken-heart-second-shot", "srcdir": "wanteds", "source": "heart2_broken",
-     "title": "Metal heart, second photo, lobe-tip chipped off",
-     "story": "The same trinket from the user's second mat photo with its left lobe-tip chipped off (the other "
-              "side from the first heart). The mirror rebuilds the missing tip.",
-     "thickness_mm": 3.0, "round_holes": "all", "provided_by": "user", "photographed": "left lobe-tip chipped off"},
+    {"id": "intact-pulley", "srcdir": "tests", "source": "32_pulley_steel",
+     "title": "Crankshaft pulley, intact (rendered)",
+     "story": "A small car's crankshaft pulley, Ø130 mm: Ø30 bore, four Ø8 bolt holes, four Ø6 lightening holes. "
+              "Measured whole on the mat: nothing rebuilt.",
+     "thickness_mm": 8.0, "round_holes": "all", "photographed": "whole on the mat"},
+    {"id": "broken-pulley", "srcdir": "tests", "source": "33_pulley_cast_broken",
+     "title": "Crankshaft pulley, rim segment snapped off (rendered, guided)",
+     "story": "A Ø130 mm crankshaft pulley with a rim segment snapped off, taking one bolt hole and two lightening "
+              "holes with it. A circle's every diameter mirrors it, so the axis can't be discovered — guided in the "
+              "Studio (vertical axis through the bore, the S4–S21 cut), the mirror rebuilt the cap and all three "
+              "lost holes exactly.",
+     "thickness_mm": 8.0, "round_holes": "all",
+     "photographed": "88.6 mm wide: one bolt hole and two lightening holes lost in the break",
+     "guidance": {"axis": None, "assert_angle": 90.0, "assert_point": [105.0, 148.5],
+                  "fracture": [f"S{i}" for i in range(4, 22)], "exclude": [], "damage": [],
+                  "family_override": False,
+                  "note": "Studio: vertical axis through the bore, S4-S21 cut (a circle needs its axis asserted)"}},
+]
+GUIDED = [  # real user photos with a stored Studio session (photo + SAM mask + guidance): ruler mode, no mat
+    {"id": "broken-bougie", "photo_src": "bougie.casse.png", "rundir": "bougie_sam",
+     "title": "Spark plug, ceramic wall broken out (user photo)",
+     "story": "A real Bosch EVO spark plug (user's photo): the right ceramic wall and hex flat broke out, exposing "
+              "the inner rod. Guided in the Studio — a vertical axis through the plug centre, the S35–S40 break "
+              "spans, the thread helix and hook electrode kept as designed asymmetry — the mirror rebuilt "
+              "the missing wall from the intact left side.",
+     "thickness_mm": 10.0, "provided_by": "user", "known_length_mm": 100.0,
+     "guidance": {"axis": None, "assert_angle": 90.0, "assert_point": [54.217, 58.862],
+                  "fracture": ["S35", "S36", "S37", "S38", "S39", "S40"],
+                  "exclude": ["S43", "S44", "S45", "S46", "S47", "S48", "S49", "S50", "S51", "S52",
+                              "S53", "S54", "S55", "S56", "S57"],
+                  "damage": [], "sources": None, "family_override": True,
+                  "note": "Studio: vertical axis, S35-S40 break, helix/hook kept as designed asymmetry"},
+     "label": ("REAL USER PHOTO with a Studio session: a user-provided photo of a Bosch spark plug with its right "
+               "ceramic wall broken out, ruler-scaled at an assumed 100 mm, rebuilt from the stored guidance "
+               "(asserted vertical axis, S35-S40 break, helix and hook electrode kept as designed asymmetry). "
+               "Not a render, not a composite."),
+     "provenance": {"source_file": "tmp/realpicts/bougie.casse.png",
+                     "what": "Bosch EVO spark plug, right ceramic wall and hex flat broken out",
+                     "size_basis": ("RULER ASSUMPTION: longest side assumed 100 mm on both the broken and the "
+                                    "intact photo; station width ratios agree within 6 % across the two vendor "
+                                    "shots, absolute scale assumed"),
+                     "thickness_basis": "CHOSEN 10 mm placeholder; the demo is the silhouette rebuild"},
+     "truth": {"basis": ("the intact plug photo (same Bosch EVO model, different vendor shot, same assumed 100 mm; "
+                         "station width ratios within 6 %)"),
+               "exact": False, "length_mm": 110.12, "width_mm": 18.74, "holes": [],
+               "photographed": ("right wall broken out over S35–S40; rebuilt 100.03 × 19.82 mm, notch fill "
+                               "25.4 mm² from the mirrored left, helix and hook kept as photographed")}},
+    {"id": "broken-wheel", "photo_src": "ALCARJante.casse.png", "rundir": "wheel_guided/accept",
+     "title": "Steel car wheel, vents hidden by damage (user photo)",
+     "story": "A real ALCAR steel car wheel (user's photo): a white blob hides three vents on the right. Guided "
+              "in the Studio — a vertical axis through the hub bore, the blob marked as damage, the visible vents "
+              "trusted — the mirror rebuilt the three hidden vents where the intact photo shows them.",
+     "thickness_mm": 10.0, "provided_by": "user", "known_length_mm": 400.0,
+     "guidance": {"axis": None, "assert_angle": 90.0, "assert_point": [229.8, 214.8], "fracture": [],
+                  "damage": ["H7"],
+                  "sources": ["H0", "H1", "H2", "H3", "H4", "H6", "H8", "H10", "H11", "H12", "H14",
+                              "H15", "H21", "H23", "H24", "H32", "H33", "H36", "H37", "H38"],
+                  "family_override": True,
+                  "note": "Studio: vertical axis through the hub bore, white blob marked as damage"},
+     "label": ("REAL USER PHOTO with a Studio session: a user-provided photo of an ALCAR steel wheel with three "
+               "vents hidden by a white blob, ruler-scaled at an assumed 400 mm, rebuilt from the stored guidance "
+               "(vertical axis through the hub, blob marked as damage). Not a render, not a composite."),
+     "provenance": {"source_file": "tmp/realpicts/ALCARJante.casse.png",
+                     "what": "ALCAR steel car wheel, three right vents hidden by a white blob",
+                     "size_basis": ("RULER ASSUMPTION: longest side assumed 400 mm (a 15-inch steel wheel) on both "
+                                    "the broken and the intact photo, so the comparison is valid while the absolute "
+                                    "scale is assumed"),
+                     "thickness_basis": "CHOSEN 10 mm: rim centre assumed; the demo is the vent rebuild"},
+     "truth": {"basis": "the intact wheel photo (same product-shot series, same assumed 400 mm ruler length)",
+               "exact": False, "length_mm": 400.56, "width_mm": 389.62,
+               "holes": [{"diameter_mm": 52.9, "count": 1}, {"shape": "traced vent", "count": 14},
+                         {"shape": "traced hub hole", "count": 4}, {"shape": "traced valve hole", "count": 1}],
+               "photographed": ("white blob hides 3 right vents; rebuilt 400.57 × 389.51 mm against intact "
+                               "400.56 × 389.62 mm; the 3 inferred vents sit within ~2 mm of the intact photo's")}},
+    {"id": "broken-volant", "photo_src": "volant.casse.png", "rundir": "volant/casse_guided", "mask_ai": False,
+     "title": "Sparco steering wheel, rim notch (user photo)",
+     "story": "A real Sparco suede steering wheel (user's photo) with a notch cut out of the upper-right rim. Guided "
+              "in the Studio — a vertical axis through the hub, the S98–S33 notch spans, the 3 cutouts and 6 hub "
+              "bolts trusted (logo and lettering left out) — the mirror rebuilt the missing rim arc from the "
+              "intact left side, landing within 1 mm of the same photo before the cut.",
+     "thickness_mm": 10.0, "provided_by": "user", "known_length_mm": 350.0,
+     "guidance": {"axis": None, "assert_angle": 90.0, "assert_point": [201.515, 255.808],
+                  "fracture": [f"S{i}" for i in list(range(98, 119)) + list(range(0, 34))],
+                  "exclude": [],
+                  "damage": [], "sources": ["H0", "H15", "H16", "H1", "H2", "H5", "H19", "H20", "H21"],
+                  "family_override": True,
+                  "note": "Studio: vertical axis through hub, S98-S33 notch, cutouts+bolts trusted"},
+     "label": ("REAL USER PHOTO with a Studio session and a digitally-cut notch: a user-provided photo of a Sparco "
+               "steering wheel, ruler-scaled at an assumed 350 mm, with a notch cut out of the upper-right rim in "
+               "this copy; rebuilt from the stored guidance (asserted vertical axis, S98-S33 notch, 3 cutouts and "
+               "6 bolts trusted). Not a render, not a composite; only the damage is digital."),
+     "provenance": {"source_file": "tmp/wanteds/Image collée (2).png",
+                     "what": "Sparco suede steering wheel, notch cut digitally out of the upper-right rim",
+                     "size_basis": ("RULER ASSUMPTION: longest side assumed 350 mm; the break extents don't change "
+                                    "the photo's longest side, so the broken and intact twins share the exact same "
+                                    "scale — the comparison is exact, only the absolute scale is assumed"),
+                     "thickness_basis": "CHOSEN 10 mm placeholder; the demo is the rim-arc rebuild"},
+     "truth": {"basis": "the same photo before the notch was cut (same pixels, same assumed 350 mm: exact)",
+               "exact": True, "length_mm": 347.681, "width_mm": 345.413,
+               "holes": [{"shape": "traced cutout", "count": 3}, {"shape": "hub bolt hole", "count": 6}],
+               "photographed": ("rim notch over S98–S33; rebuilt 347.68 × 345.41 mm against intact 347.68 × "
+                               "345.41 mm; the 77.5 mm inferred rim arc sits within 1.0 mm (mean 0.67 mm) of the "
+                               "intact twin")}},
 ]
 
 
@@ -196,23 +279,44 @@ def _truth(record: dict, round_holes: str) -> dict:
             + ([{"shape": "traced passage", "count": shapes}] if shapes else [])}
 
 
+def _png_with_description(png: bytes, description: str) -> bytes:
+    """The PNG with a Description text chunk; pixels untouched (lossless), verified pixel-identical."""
+    from PIL.PngImagePlugin import PngInfo
+
+    before = np.asarray(Image.open(io.BytesIO(png)).convert("RGB"))
+    info = PngInfo()
+    info.add_text("Description", description)
+    buf = io.BytesIO()
+    Image.open(io.BytesIO(png)).save(buf, format="PNG", pnginfo=info)
+    assert np.array_equal(before, np.asarray(Image.open(io.BytesIO(buf.getvalue())).convert("RGB")))
+    return buf.getvalue()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--composites", type=Path, required=True, help="folder of make_commons_samples.py output")
     parser.add_argument("--tests", type=Path, required=True, help="folder of make_test_photos.py output")
     parser.add_argument("--wanteds", type=Path, required=True, help="folder of make_wanted_samples.py output")
+    parser.add_argument("--realpicts", type=Path, default=None, help="folder of real user photos (guided samples)")
+    parser.add_argument("--guided-run", type=Path, default=None, help="folder of the verified guided run")
+    parser.add_argument("--only", nargs="*", default=None, help="bundle only these sample ids (skips the rest)")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     srcdirs = {"commons": args.composites, "tests": args.tests, "wanteds": args.wanteds}
     manifest, credits, user_photos = [], [], []
+    if args.only is not None and (old := OUT / "samples.json").is_file():  # keep the entries we're not rebuilding
+        manifest = [s for s in json.loads(old.read_text()) if s["id"] not in args.only]
     rendered = RENDERED
-    photo, thumb = f"{rendered['id']}.jpg", f"{rendered['id']}.thumb.jpg"
-    (OUT / photo).write_bytes(_replace_exif((args.tests / f"{rendered['source']}.jpg").read_bytes(),
-                                            rendered["label"]))
-    asyncio.run(_thumbnail(OUT / photo, rendered["thickness_mm"], OUT / thumb))
-    manifest.append({k: v for k, v in rendered.items() if k != "source"}
-                    | {"file": photo, "thumb": thumb, "kind": "synthetic", "rendered": True})
+    if args.only is None or rendered["id"] in args.only:
+        photo, thumb = f"{rendered['id']}.jpg", f"{rendered['id']}.thumb.jpg"
+        (OUT / photo).write_bytes(_replace_exif((args.tests / f"{rendered['source']}.jpg").read_bytes(),
+                                                rendered["label"]))
+        asyncio.run(_thumbnail(OUT / photo, rendered["thickness_mm"], OUT / thumb))
+        manifest.append({k: v for k, v in rendered.items() if k != "source"}
+                        | {"file": photo, "thumb": thumb, "kind": "synthetic", "rendered": True})
     for sample in SAMPLES:
+        if args.only is not None and sample["id"] not in args.only:
+            continue
         srcdir = srcdirs[sample["srcdir"]]
         record = json.loads((srcdir / f"{sample['source']}.truth.json").read_text())
         provenance = record.get("provenance", {})
@@ -240,7 +344,45 @@ def main() -> None:
                                  "truth": truth})
         print(f"{photo}: {(OUT / photo).stat().st_size / 1e6:.2f} MB; truth {truth['length_mm']} × "
               f"{truth['width_mm']} mm, holes {truth['holes']}")
+    for sample in GUIDED:
+        if args.only is not None and sample["id"] not in args.only:
+            continue
+        if args.realpicts is None or args.guided_run is None:
+            print(f"SKIP {sample['id']}: guided samples need --realpicts and --guided-run")
+            continue
+        run = args.guided_run / sample["rundir"]
+        photo, thumb, mask = f"{sample['id']}.png", f"{sample['id']}.thumb.jpg", f"{sample['id']}.mask.png"
+        (OUT / photo).write_bytes(_png_with_description((args.realpicts / sample["photo_src"]).read_bytes(),
+                                                       sample["label"]))
+        (OUT / mask).write_bytes((run / "mask.png").read_bytes())  # the verified run's SAM mask, byte for byte
+        crop = cv2.imread(str(run / "photo.jpg"))  # the verified run's own rectified crop, as the thumbnail
+        scale = 720 / crop.shape[1]
+        cv2.imwrite(str(OUT / thumb), cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA),
+                    [cv2.IMWRITE_JPEG_QUALITY, 84])
+        manifest.append({"id": sample["id"], "title": sample["title"], "story": sample["story"],
+                         "thickness_mm": sample["thickness_mm"], "provided_by": sample["provided_by"],
+                         "file": photo, "thumb": thumb, "mask": mask, "mask_ai": sample.get("mask_ai", True),
+                         "known_length_mm": sample["known_length_mm"], "guidance": sample["guidance"],
+                         "kind": "photograph", "label": sample["label"], "truth": sample["truth"]})
+        user_photos.append((photo, thumb, sample["provenance"]))
+        print(f"{photo}: guided Studio session; truth {sample['truth']['length_mm']} × "
+              f"{sample['truth']['width_mm']} mm (ruler-assumed)")
+    order = [RENDERED["id"], *(x["id"] for x in SAMPLES), *(x["id"] for x in GUIDED)]
+    manifest.sort(key=lambda s: order.index(s["id"]) if s["id"] in order else len(order))
     (OUT / "samples.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if args.only is not None:  # a partial bundling must not drop the other entries' credits
+        have = (OUT / "CREDITS.md").read_text() if (OUT / "CREDITS.md").is_file() else ""
+        extra = []
+        for photo, thumb, provenance in user_photos:
+            if photo not in have:
+                extra += [f"## `{photo}`, `{thumb}`", "",
+                          f"- **Source photo:** {provenance['source_file']} (supplied by the user for the examples).",
+                          f"- **Part:** {provenance['what']}.",
+                          f"- **Size basis:** {provenance['size_basis']}.",
+                          f"- **Thickness:** {provenance['thickness_basis']}.", ""]
+        if extra:
+            (OUT / "CREDITS.md").write_text(have.rstrip("\n") + "\n\n" + "\n".join(extra), encoding="utf-8")
+        return
     lines = ["# Example photos: credits and licences", "",
              "The Commons-based examples are SYNTHETIC COMPOSITES made by `backend/tools/make_commons_samples.py`: "
              "a real photo of a real part, cut out, its tilt corrected, sized from the stated basis, optionally "

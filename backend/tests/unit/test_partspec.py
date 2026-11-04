@@ -63,7 +63,7 @@ def test_thickness_out_of_range() -> None:
 
 
 def test_too_many_points() -> None:
-    a = np.linspace(0, 2 * np.pi, 2001, endpoint=False)
+    a = np.linspace(0, 2 * np.pi, 8001, endpoint=False)  # over MAX_POINTS (8000, raised for dense SAM outlines)
     _rejects(spec_dict(np.column_stack([30 * np.cos(a), 30 * np.sin(a)])))
 
 

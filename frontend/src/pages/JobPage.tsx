@@ -11,6 +11,7 @@ import { href } from "../lib/route";
 import type { ApiErrorBody, Dimension, Files, Health, JobStatus, Report, Sample } from "../types";
 import { Advanced } from "./Advanced";
 import { Credit } from "./Home";
+import { Feedback } from "./Studio";
 
 const StlViewer = lazy(() => import("../components/StlViewer"));
 const POLL_MS = 700;
@@ -103,7 +104,9 @@ function Failure({ status, error, health }: { status?: JobStatus; error: ApiErro
   }
   const canRerun = !!status && !!req?.thickness_mm && error.code !== "JOB_NOT_FOUND";
   const refused = error.code === "FAMILY_UNSUPPORTED" || error.code === "TRACE_PARTIAL";
+  const studioable = !!status && !!status.reconstruction;
   return (
+    <>
     <section className={`failure ${refused ? "failure-refused" : ""}`} role="alert">
       <div className="failure-icon" aria-hidden="true">{refused ? "◇" : "!"}</div>
       <div className="failure-body">
@@ -115,7 +118,10 @@ function Failure({ status, error, health }: { status?: JobStatus; error: ApiErro
           {copy.tips.map((t) => <li key={t}>{t}</li>)}
         </ul>
         <div className="actions">
-          <a className="button button-primary" href={href({ name: "new" })}>{copy.reshoot ? "Try another photo" : "New repair"}</a>
+          {studioable && status && (
+            <a className="button button-primary" href={href({ name: "studio", id: status.job_id })}>Steer it in the Studio</a>
+          )}
+          <a className={`button ${studioable ? "button-secondary" : "button-primary"}`} href={href({ name: "new" })}>{copy.reshoot ? "Try another photo" : "New repair"}</a>
           {copy.offerNoAi && canRerun && (
             <button type="button" className="button button-secondary" onClick={rerunWithoutAi} disabled={busy}>
               {busy ? <><Spinner /> Starting…</> : "Run again without AI"}
@@ -135,6 +141,8 @@ function Failure({ status, error, health }: { status?: JobStatus; error: ApiErro
         </details>
       </div>
     </section>
+    {status && <Feedback jobId={status.job_id} initial={status.feedback ?? []} />}
+    </>
   );
 }
 
@@ -348,6 +356,11 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
         </dl>
       </section>
 
+      <p className="studio-strip">
+        <span>Not the rebuild you expected?</span>
+        <a className="button button-secondary button-sm" href={href({ name: "studio", id: status.job_id })}>Steer it in the Studio</a>
+      </p>
+
       <div className="result-visuals">
         <section className="card card-flush viewer-card" aria-label="3D model">
           <Suspense fallback={<div className="viewer"><div className="viewer-status"><Spinner /> Loading the 3D viewer…</div></div>}>
@@ -477,6 +490,8 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
 
         {sample && <KnownAnswer sample={sample} report={report} />}
       </div>
+
+      <Feedback jobId={status.job_id} initial={status.feedback ?? []} />
 
       <div className="advanced-toggle">
         <button type="button" className="button button-ghost" aria-expanded={advanced} aria-controls="advanced" onClick={() => setAdvanced((v) => !v)}>

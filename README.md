@@ -75,8 +75,10 @@ cd backend && uv sync && uv run reforge-api
 # open http://127.0.0.1:8000
 ```
 
-No mat printed yet? Open **Examples** on the home page: 19 demos, broken and intact, each placed on a rendered
-mat at a known size, so you can compare with the truth. Real part photos (Wikimedia Commons, credited in the app, or
+No mat printed yet? Open **Examples** on the home page: 20 demos, broken and intact. 17 sit on a rendered
+mat at a known size (renders and real-part composites), so you can compare with the truth; three are real user
+photos with stored Studio sessions (a wheel vent rebuild, a spark-plug wall rebuild, a steering-wheel rim rebuild,
+all ruler-scaled). Real part photos (Wikimedia Commons, credited in the app, or
 supplied by the user and marked as such) sit next to rendered parts (labelled "Rendered example"). All run through
 the full pipeline. No printer at all? Tick "My photo has no mat" and enter one measured length instead.
 

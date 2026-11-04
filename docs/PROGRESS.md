@@ -758,3 +758,29 @@ via the peer channel, with the measurements below).
 **Next**
 - **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
 - **To get more REAL demos:** photograph real FLAT broken parts (a snapped flat bracket, a torn flat gasket, a broken shim/clip) — 3D parts (wheels, shocks, springs, plugs) can never rebuild from one photo.
+
+## 2026-11-04 (evening): Session 20, Studio human-in-the-loop + wheel admitted (20 demos)
+
+**Done**
+- ✅ **Studio human-in-the-loop (✅ implemented and tested):** `Guidance` (axis/assert-angle+pivot/fracture/damage/sources/family-override/note) through pipeline + API (`guide_*`, `from_job`, sample-carried sessions, `/api/deskew`, `/api/jobs/{id}/feedback`), Studio page (Guide + Flatten tabs), 👍/👎 feedback on every job. Guidance steers, geometry judges.
+- ✅ **Steel wheel admitted (20th sample):** white blob hides 3 right vents; live SAM + Spark guided 90° through hub bore, HOLES_ONLY, 400.57×389.51 vs intact 400.56×389.62, 20 observed + 3 inferred (trusted positions within ~2.3 mm of thresholded truth). Bundled as `broken-wheel` (`kind: photograph`, `truth.exact: false`); free rerun identical; API test asserts U0 + 23 holes + ±0.5 mm. Tmp quota 9/20 = 45 %.
+- ⛔ **Feu/coque/panel guided, refused with numbers:** feu best support 0.237 (3/4 perspective, asymmetric faces); coque 65 vs 139 mm² (0.47 > 0.35 gate, 3D fob); panel both axes refuse, intact control proves non-mirror family. All declined-honest, excluded.
+- ✅ **Suite 192 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 20.** `MAX_POINTS` 2000 → 8000 (test synced). EVALUATION/PLAN/README synced.
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md`), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-04 (night): Session 21, hearts out, bougie/volant/pulley, Studio reshape editor, showcase
+
+**Done**
+- ✅ **Hearts removed:** 4 metal-heart samples out everywhere (files → `tmp/samples_removed`).
+- ✅ **Bougie fixed + bundled:** min-reach refine agreement + leaking-sea fill (real fixes, measured t values in EVALUATION); guided rebuild 100.03 × 19.82, 25.35 mm² fill; `broken-bougie` green.
+- ✅ **Volant bundled:** relative-glare fix (real bug); rebuilt 347.68 × 345.41 = same-photo twin to 0.001 mm, inferred arc within 1.0 mm; `broken-volant` green (`exact: true`).
+- ✅ **Symmetric case:** rendered Ø130 crankshaft pulley (bore + 8 holes), broken twin loses 3 holes; asserted-axis re-measurement fix (real bug); 130.000 exact, 3 holes inferred exactly; `intact-pulley` + `broken-pulley` green. Bushing skipped (top-down = washer).
+- ✅ **tmp/errors fixed:** deskew blob decode + styled picker + retry; card margin; solid header; readable dark 3D walls; dead TS function removed.
+- ✅ **Studio reshape editor:** SVG drag handles + undo/redo/reset + `POST /api/jobs/{id}/reshape` with geometric span carry + `reshaped`/`OUTLINE_RESHAPED` records; photographed outline kept for evidence splits; 3 tests.
+- ✅ **Showcase:** `tmp/finalimageandinstuctions/` — 5 bluffing cases + INSTRUCTIONS.md (order, clicks, voiceover, guardrails).
+- ✅ **Suite 196 passed, 3 deselected; ruff clean; frontend builds; gallery 20 (user tmp 35 %).** EVALUATION/PLAN/README synced.
+
+**Next**
+- **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md` + showcase), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.

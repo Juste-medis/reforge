@@ -196,9 +196,17 @@ export function StlViewer({ url, lines, angleDeg = 0, dims, texture }: {
           const map = new THREE.TextureLoader().load(texture.url, () => request());
           map.colorSpace = THREE.SRGBColorSpace;
           map.anisotropy = 8;
+          const wall = new THREE.Color(texture.colour_hex);
+          {
+            const hsl = { h: 0, s: 0, l: 0 };
+            wall.getHSL(hsl);
+            // Walls are synthesis, never photographed: a black part would render unreadable, so dark colours are
+            // lifted toward grey (the hue stays). The photographed top face keeps the real photo.
+            if (hsl.l < 0.25) wall.lerp(new THREE.Color(0xffffff), 0.45 * (1 - hsl.l / 0.25));
+          }
           const real = new THREE.Group();
           real.add(new THREE.Mesh(parts.top, new THREE.MeshStandardMaterial({ map, roughness: 0.58, metalness: 0.05 })));
-          real.add(new THREE.Mesh(parts.rest, new THREE.MeshStandardMaterial({ color: new THREE.Color(texture.colour_hex), roughness: 0.6, metalness: 0.05 })));
+          real.add(new THREE.Mesh(parts.rest, new THREE.MeshStandardMaterial({ color: wall, roughness: 0.6, metalness: 0.05 })));
           model.add(real);
           photoGroup = real;
           mesh.visible = false;

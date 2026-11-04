@@ -297,60 +297,6 @@
     }
   },
   {
-    "id": "heart",
-    "title": "Metal heart, intact (user photo)",
-    "story": "A real engraved metal heart from the user's mat photo, measured 51.8 mm wide with a caliper. Traced as photographed: nothing rebuilt.",
-    "thickness_mm": 3.0,
-    "provided_by": "user",
-    "file": "heart.jpg",
-    "thumb": "heart.thumb.jpg",
-    "kind": "synthetic",
-    "label": "SYNTHETIC COMPOSITE for the app examples: a user-provided photo of a real part placed on a rendered mat, shot by a simulated phone camera. Not a real photo.",
-    "truth": {
-      "length_mm": 52.39,
-      "width_mm": 50.2,
-      "holes": [],
-      "basis": "MEASURED 51.8 mm wide (caliper, tmp/coeur_a_mesurer.jpg); the height follows the photo's aspect (shot slightly off vertical)",
-      "photographed": "whole on the mat"
-    }
-  },
-  {
-    "id": "broken-heart",
-    "title": "Metal heart, lobe-tip chipped off (user photo)",
-    "story": "The same heart with its right lobe-tip chipped off. Symmetric by blank, so the mirror rebuilds the missing tip.",
-    "thickness_mm": 3.0,
-    "provided_by": "user",
-    "file": "broken-heart.jpg",
-    "thumb": "broken-heart.thumb.jpg",
-    "kind": "synthetic",
-    "label": "SYNTHETIC COMPOSITE for the app examples: a user-provided photo of a real part placed on a rendered mat, shot by a simulated phone camera. Not a real photo.",
-    "truth": {
-      "length_mm": 52.39,
-      "width_mm": 50.2,
-      "holes": [],
-      "basis": "MEASURED 51.8 mm wide intact (same basis as the intact one)",
-      "photographed": "right lobe-tip chipped off"
-    }
-  },
-  {
-    "id": "heart-second-shot",
-    "title": "Metal heart, second photo, intact",
-    "story": "The same trinket from the user's second mat photo (stronger angle, outline symmetrised as cast). Measured whole.",
-    "thickness_mm": 3.0,
-    "provided_by": "user",
-    "file": "heart-second-shot.jpg",
-    "thumb": "heart-second-shot.thumb.jpg",
-    "kind": "synthetic",
-    "label": "SYNTHETIC COMPOSITE for the app examples: a user-provided photo of a real part placed on a rendered mat, shot by a simulated phone camera. Not a real photo.",
-    "truth": {
-      "length_mm": 53.65,
-      "width_mm": 46.99,
-      "holes": [],
-      "basis": "MEASURED 51.8 mm wide (same trinket, same caliper as the first heart shot)",
-      "photographed": "whole on the mat"
-    }
-  },
-  {
     "id": "broken-sprocket-r2",
     "title": "Chain sprocket, other side snapped off (user photo)",
     "story": "The same real 21-tooth sprocket with another side snapped off. The bore stays round, the teeth come back by mirror.",
@@ -442,21 +388,342 @@
     }
   },
   {
-    "id": "broken-heart-second-shot",
-    "title": "Metal heart, second photo, lobe-tip chipped off",
-    "story": "The same trinket from the user's second mat photo with its left lobe-tip chipped off (the other side from the first heart). The mirror rebuilds the missing tip.",
-    "thickness_mm": 3.0,
-    "provided_by": "user",
-    "file": "broken-heart-second-shot.jpg",
-    "thumb": "broken-heart-second-shot.thumb.jpg",
+    "id": "intact-pulley",
+    "title": "Crankshaft pulley, intact (rendered)",
+    "story": "A small car's crankshaft pulley, Ø130 mm: Ø30 bore, four Ø8 bolt holes, four Ø6 lightening holes. Measured whole on the mat: nothing rebuilt.",
+    "thickness_mm": 8.0,
+    "rendered": true,
+    "file": "intact-pulley.jpg",
+    "thumb": "intact-pulley.thumb.jpg",
     "kind": "synthetic",
-    "label": "SYNTHETIC COMPOSITE for the app examples: a user-provided photo of a real part placed on a rendered mat, shot by a simulated phone camera. Not a real photo.",
+    "label": "SYNTHETIC EXAMPLE: a rendered part on a rendered Re-Forge mat, shot by a simulated phone camera (RE-FORGE tools/make_test_photos.py). Not a photo of a real part.",
     "truth": {
-      "length_mm": 53.65,
-      "width_mm": 46.99,
+      "length_mm": 130.0,
+      "width_mm": 130.0,
+      "holes": [
+        {
+          "diameter_mm": 30.0,
+          "count": 1
+        },
+        {
+          "diameter_mm": 8.0,
+          "count": 4
+        },
+        {
+          "diameter_mm": 6.0,
+          "count": 4
+        }
+      ],
+      "basis": "the intact part, as rendered",
+      "photographed": "whole on the mat"
+    }
+  },
+  {
+    "id": "broken-pulley",
+    "title": "Crankshaft pulley, rim segment snapped off (rendered, guided)",
+    "story": "A Ø130 mm crankshaft pulley with a rim segment snapped off, taking one bolt hole and two lightening holes with it. A circle's every diameter mirrors it, so the axis can't be discovered — guided in the Studio (vertical axis through the bore, the S4–S21 cut), the mirror rebuilt the cap and all three lost holes exactly.",
+    "thickness_mm": 8.0,
+    "guidance": {
+      "axis": null,
+      "assert_angle": 90.0,
+      "assert_point": [
+        105.0,
+        148.5
+      ],
+      "fracture": [
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S14",
+        "S15",
+        "S16",
+        "S17",
+        "S18",
+        "S19",
+        "S20",
+        "S21"
+      ],
+      "exclude": [],
+      "damage": [],
+      "family_override": false,
+      "note": "Studio: vertical axis through the bore, S4-S21 cut (a circle needs its axis asserted)"
+    },
+    "rendered": true,
+    "file": "broken-pulley.jpg",
+    "thumb": "broken-pulley.thumb.jpg",
+    "kind": "synthetic",
+    "label": "SYNTHETIC EXAMPLE: a rendered part on a rendered Re-Forge mat, shot by a simulated phone camera (RE-FORGE tools/make_test_photos.py). Not a photo of a real part.",
+    "truth": {
+      "length_mm": 130.0,
+      "width_mm": 130.0,
+      "holes": [
+        {
+          "diameter_mm": 30.0,
+          "count": 1
+        },
+        {
+          "diameter_mm": 8.0,
+          "count": 4
+        },
+        {
+          "diameter_mm": 6.0,
+          "count": 4
+        }
+      ],
+      "basis": "the intact part, as rendered",
+      "photographed": "88.6 mm wide: one bolt hole and two lightening holes lost in the break"
+    }
+  },
+  {
+    "id": "broken-bougie",
+    "title": "Spark plug, ceramic wall broken out (user photo)",
+    "story": "A real Bosch EVO spark plug (user's photo): the right ceramic wall and hex flat broke out, exposing the inner rod. Guided in the Studio — a vertical axis through the plug centre, the S35–S40 break spans, the thread helix and hook electrode kept as designed asymmetry — the mirror rebuilt the missing wall from the intact left side.",
+    "thickness_mm": 10.0,
+    "provided_by": "user",
+    "file": "broken-bougie.png",
+    "thumb": "broken-bougie.thumb.jpg",
+    "mask": "broken-bougie.mask.png",
+    "mask_ai": true,
+    "known_length_mm": 100.0,
+    "guidance": {
+      "axis": null,
+      "assert_angle": 90.0,
+      "assert_point": [
+        54.217,
+        58.862
+      ],
+      "fracture": [
+        "S35",
+        "S36",
+        "S37",
+        "S38",
+        "S39",
+        "S40"
+      ],
+      "exclude": [
+        "S43",
+        "S44",
+        "S45",
+        "S46",
+        "S47",
+        "S48",
+        "S49",
+        "S50",
+        "S51",
+        "S52",
+        "S53",
+        "S54",
+        "S55",
+        "S56",
+        "S57"
+      ],
+      "damage": [],
+      "sources": null,
+      "family_override": true,
+      "note": "Studio: vertical axis, S35-S40 break, helix/hook kept as designed asymmetry"
+    },
+    "kind": "photograph",
+    "label": "REAL USER PHOTO with a Studio session: a user-provided photo of a Bosch spark plug with its right ceramic wall broken out, ruler-scaled at an assumed 100 mm, rebuilt from the stored guidance (asserted vertical axis, S35-S40 break, helix and hook electrode kept as designed asymmetry). Not a render, not a composite.",
+    "truth": {
+      "basis": "the intact plug photo (same Bosch EVO model, different vendor shot, same assumed 100 mm; station width ratios within 6 %)",
+      "exact": false,
+      "length_mm": 110.12,
+      "width_mm": 18.74,
       "holes": [],
-      "basis": "MEASURED 51.8 mm wide intact (same basis as the intact one)",
-      "photographed": "left lobe-tip chipped off"
+      "photographed": "right wall broken out over S35–S40; rebuilt 100.03 × 19.82 mm, notch fill 25.4 mm² from the mirrored left, helix and hook kept as photographed"
+    }
+  },
+  {
+    "id": "broken-wheel",
+    "title": "Steel car wheel, vents hidden by damage (user photo)",
+    "story": "A real ALCAR steel car wheel (user's photo): a white blob hides three vents on the right. Guided in the Studio — a vertical axis through the hub bore, the blob marked as damage, the visible vents trusted — the mirror rebuilt the three hidden vents where the intact photo shows them.",
+    "thickness_mm": 10.0,
+    "provided_by": "user",
+    "file": "broken-wheel.png",
+    "thumb": "broken-wheel.thumb.jpg",
+    "mask": "broken-wheel.mask.png",
+    "mask_ai": true,
+    "known_length_mm": 400.0,
+    "guidance": {
+      "axis": null,
+      "assert_angle": 90.0,
+      "assert_point": [
+        229.8,
+        214.8
+      ],
+      "fracture": [],
+      "damage": [
+        "H7"
+      ],
+      "sources": [
+        "H0",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H6",
+        "H8",
+        "H10",
+        "H11",
+        "H12",
+        "H14",
+        "H15",
+        "H21",
+        "H23",
+        "H24",
+        "H32",
+        "H33",
+        "H36",
+        "H37",
+        "H38"
+      ],
+      "family_override": true,
+      "note": "Studio: vertical axis through the hub bore, white blob marked as damage"
+    },
+    "kind": "photograph",
+    "label": "REAL USER PHOTO with a Studio session: a user-provided photo of an ALCAR steel wheel with three vents hidden by a white blob, ruler-scaled at an assumed 400 mm, rebuilt from the stored guidance (vertical axis through the hub, blob marked as damage). Not a render, not a composite.",
+    "truth": {
+      "basis": "the intact wheel photo (same product-shot series, same assumed 400 mm ruler length)",
+      "exact": false,
+      "length_mm": 400.56,
+      "width_mm": 389.62,
+      "holes": [
+        {
+          "diameter_mm": 52.9,
+          "count": 1
+        },
+        {
+          "shape": "traced vent",
+          "count": 14
+        },
+        {
+          "shape": "traced hub hole",
+          "count": 4
+        },
+        {
+          "shape": "traced valve hole",
+          "count": 1
+        }
+      ],
+      "photographed": "white blob hides 3 right vents; rebuilt 400.57 × 389.51 mm against intact 400.56 × 389.62 mm; the 3 inferred vents sit within ~2 mm of the intact photo's"
+    }
+  },
+  {
+    "id": "broken-volant",
+    "title": "Sparco steering wheel, rim notch (user photo)",
+    "story": "A real Sparco suede steering wheel (user's photo) with a notch cut out of the upper-right rim. Guided in the Studio — a vertical axis through the hub, the S98–S33 notch spans, the 3 cutouts and 6 hub bolts trusted (logo and lettering left out) — the mirror rebuilt the missing rim arc from the intact left side, landing within 1 mm of the same photo before the cut.",
+    "thickness_mm": 10.0,
+    "provided_by": "user",
+    "file": "broken-volant.png",
+    "thumb": "broken-volant.thumb.jpg",
+    "mask": "broken-volant.mask.png",
+    "mask_ai": false,
+    "known_length_mm": 350.0,
+    "guidance": {
+      "axis": null,
+      "assert_angle": 90.0,
+      "assert_point": [
+        201.515,
+        255.808
+      ],
+      "fracture": [
+        "S98",
+        "S99",
+        "S100",
+        "S101",
+        "S102",
+        "S103",
+        "S104",
+        "S105",
+        "S106",
+        "S107",
+        "S108",
+        "S109",
+        "S110",
+        "S111",
+        "S112",
+        "S113",
+        "S114",
+        "S115",
+        "S116",
+        "S117",
+        "S118",
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S14",
+        "S15",
+        "S16",
+        "S17",
+        "S18",
+        "S19",
+        "S20",
+        "S21",
+        "S22",
+        "S23",
+        "S24",
+        "S25",
+        "S26",
+        "S27",
+        "S28",
+        "S29",
+        "S30",
+        "S31",
+        "S32",
+        "S33"
+      ],
+      "exclude": [],
+      "damage": [],
+      "sources": [
+        "H0",
+        "H15",
+        "H16",
+        "H1",
+        "H2",
+        "H5",
+        "H19",
+        "H20",
+        "H21"
+      ],
+      "family_override": true,
+      "note": "Studio: vertical axis through hub, S98-S33 notch, cutouts+bolts trusted"
+    },
+    "kind": "photograph",
+    "label": "REAL USER PHOTO with a Studio session and a digitally-cut notch: a user-provided photo of a Sparco steering wheel, ruler-scaled at an assumed 350 mm, with a notch cut out of the upper-right rim in this copy; rebuilt from the stored guidance (asserted vertical axis, S98-S33 notch, 3 cutouts and 6 bolts trusted). Not a render, not a composite; only the damage is digital.",
+    "truth": {
+      "basis": "the same photo before the notch was cut (same pixels, same assumed 350 mm: exact)",
+      "exact": true,
+      "length_mm": 347.681,
+      "width_mm": 345.413,
+      "holes": [
+        {
+          "shape": "traced cutout",
+          "count": 3
+        },
+        {
+          "shape": "hub bolt hole",
+          "count": 6
+        }
+      ],
+      "photographed": "rim notch over S98–S33; rebuilt 347.68 × 345.41 mm against intact 347.68 × 345.41 mm; the 77.5 mm inferred rim arc sits within 1.0 mm (mean 0.67 mm) of the intact twin"
     }
   }
 ]

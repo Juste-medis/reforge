@@ -20,7 +20,9 @@ from shapely.geometry import Point, Polygon
 
 from reforge.errors import ReforgeError
 
-MAX_POINTS = 2000
+# Outline points are ~0.25 mm apart: a Ø400-class part legitimately needs ~5000. Kept bounded so one bad photo
+# can't produce a million-point polygon.
+MAX_POINTS = 8000
 MAX_COORD_MM = 500.0
 MIN_WALL_MM = 0.4
 

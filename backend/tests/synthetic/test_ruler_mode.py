@@ -59,3 +59,20 @@ def test_ruler_mode_recovers_scale_without_mat(tmp_path: Path) -> None:
     codes = [w["code"] for w in report["calibration"]["warnings"]]
     assert any(c.startswith("RULER_") for c in codes), codes
     assert (tmp_path / "out" / "model.stl").is_file()
+
+
+def test_fixed_ruler_scale_overrides_the_span(tmp_path: Path) -> None:
+    """A Studio-deskewed photo carries its exact scale: the torn outline's span must not rescale it. At the
+    photo's true 10 px/mm the bracket measures 80 mm; at a halved scale it measures double."""
+    photo = _matless_photo(tmp_path / "photo.png")
+    exact = asyncio.run(photo_to_stl(photo, tmp_path / "exact", 3.0, ClassicalSegmenter(), known_length_mm=80.0,
+                                     ruler_px_per_mm=PX_PER_MM, job_id="ruler-exact"))
+    assert exact["calibration"]["scale_source"] == "deskew_exact"
+    assert exact["part"]["overall_mm"][0] == pytest.approx(80, abs=1.2)
+    halved = asyncio.run(photo_to_stl(photo, tmp_path / "halved", 3.0, ClassicalSegmenter(), known_length_mm=80.0,
+                                      ruler_px_per_mm=PX_PER_MM / 2, job_id="ruler-halved"))
+    assert halved["part"]["overall_mm"][0] == pytest.approx(160, abs=2.4)
+    with pytest.raises(ReforgeError) as exc:
+        asyncio.run(photo_to_stl(photo, tmp_path / "modeless", 3.0, ClassicalSegmenter(),
+                                 ruler_px_per_mm=PX_PER_MM, job_id="ruler-modeless"))
+    assert exc.value.code == "RULER_LENGTH_INVALID"

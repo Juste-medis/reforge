@@ -95,6 +95,13 @@ export const ERROR_COPY: Record<string, ErrorCopy> = {
   NETWORK: { title: "Can't reach Re-Forge", tips: ["Check your connection, and that the server is running."] },
   INTERNAL_ERROR: { title: "Something went wrong on our side", tips: ["Try again. If it happens again, note the job id below."] },
   REQUEST_INVALID: { title: "Some values aren't valid", tips: ["Check the thickness and the bar readings."] },
+  GUIDE_UNKNOWN_AXIS: { title: "That axis isn't one of this run's candidates", tips: ["Pick an axis shown on the labelled view, or assert your own angle."] },
+  GUIDE_UNKNOWN_SEGMENT: { title: "That edge isn't one of this run's segments", tips: ["Tick the edges shown on the labelled view."] },
+  GUIDE_UNKNOWN_HOLE: { title: "That hole isn't one of this run's holes", tips: ["Pick the holes shown on the labelled view."] },
+  GUIDE_BAD_ANGLE: { title: "That isn't a usable axis angle", tips: ["Enter an angle from 0 up to (not including) 180 degrees; 90 is vertical."] },
+  GUIDE_BAD_POINT: { title: "That axis pivot isn't usable", tips: ["Enter both the X and the Y of the pivot point, in millimetres."] },
+  DESKEW_BAD_CORNERS: { title: "Those corners don't make a rectangle", tips: ["Click the part's four corners, spread over the whole part, in any order."] },
+  DESKEW_BAD_SIZE: { title: "That length or width looks wrong", tips: ["Measure the intact rectangle's long and short sides with a ruler or caliper."] },
 };
 
 export const hasCopy = (code: string): boolean => code in ERROR_COPY;

@@ -1064,3 +1064,78 @@ more intact synthetics with broken twins. Hero is now the real broken sprocket (
 
 Suite: 175 passed (3 new), 3 deselected; ruff clean; frontend builds; gallery shows all 19. Live spend this addendum:
 about $0.19 (8 casse verdicts + hero run).
+
+## 2026-11-04 (evening) · Studio human-in-the-loop forces the wheel rebuild; feu/coque/panel refuse with numbers · LIVE SAM 3.1 + Muse Spark 1.3, guided
+
+The user demanded the loop work on their photos, "au pire un human in the loop": a Studio where they pick the
+axis, fracture and damage, plus feedback. Built and tested (✅): `Guidance` (axis/assert-angle+point/fracture/
+damage/sources/family-override/note) through pipeline + API (`guide_*`, `from_job`, `/api/deskew`,
+`/api/jobs/{id}/feedback`), a Studio page (Guide + Flatten tabs) and 👍/👎 feedback on every job. Guidance steers,
+geometry still judges: an asserted axis is never support-filtered but still fails when holes contradict it.
+
+**Steel wheel admitted (20th sample, ✅):** the white blob hides three right vents. Live SAM 3.1 ($0.0025) + Spark
+($0.0209), guided 90° through the hub bore pivot (229.8, 214.8), H7 marked as damage, 20 vent sources trusted,
+HOLES_ONLY: rebuilt 400.568 × 389.513 mm against the intact photo's 400.561 × 389.623 mm (Δ0.01/0.11 mm, same
+assumed 400 mm ruler length both sides), 20 OBSERVED + 3 INFERRED holes, the inferred H11/H14 within ~2.3 mm of the
+intact photo's independently thresholded true vents (H15 an edge fragment). Correction to the previous addendum: a
+wheel face shot near-top-down *is* a flat hole pattern, so holes-only mirror inference applies; the extrusion depth
+stays CHOSEN 10 mm. Bundled as `broken-wheel` (real PNG + stored SAM mask + guidance, `kind: photograph`,
+`truth.exact: false`); the free geometric rerun reproduces the accept's numbers exactly, and the API
+test asserts U0 + 23 holes (3 inferred) + ±0.5 mm. `MAX_POINTS` 2000 → 8000 for dense SAM outlines (test synced).
+
+**Feu, second guided attempt, refused:** screw-pair-midpoint pivot (182.35, 66.95), fracture S4–S23 plus the
+corner chip S120–S136 (confirmed against the intact photo: the amber corner is smooth there), H0–H3 + H13–H21 as
+damage, H9/H10 sources. Best support 0.237 at 90.5°, AXIS_ASYMMETRIC: a 3/4 product shot, the left lens edge never
+mirrors the right housing side + trim in perspective. **Coque guided, refused:** A0 at support 1.0, but
+AXIS_ASYMMETRIC 65 mm² unexplained vs 139 mm² added (0.47 > 0.35 gate); S32 matches its mirror 100 % (intact, not
+fracture). A 3D fob in 3/4 view is out of the flat family. **Panel filter, refused:** Studio-deskewed via pleat-field
+line fits, both cardinal axes refuse (1906 vs 3098; 3377 vs 2677 mm²), and the intact control shows only a diagonal
+A2 at 0.99 with no cardinal axes — proof the panel is not mirror-symmetric. All three stay declined-honest, excluded
+from the gallery; evidence under `/tmp/feu_guided2`, `/tmp/coque_guided`, `/tmp/panel_pleatdesk4`.
+
+Suite: 192 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 20 (9/20 = 45 % user tmp).
+
+## Addendum 2026-11-04 (night): hearts out, bougie/volant/pulley in, Studio reshape editor
+
+**Metal hearts removed (user request):** all 4 heart samples out (manifest, files → `tmp/samples_removed`,
+CREDITS, generator); gallery bar unchanged (broken must rebuild vs truth, intact measures, declined excluded).
+
+**Bougie (Bosch EVO plug, user photo, ✅):** white ceramic on white + printed stripes. Two real pipeline fixes:
+(1) the refine step now needs BOTH reaches to agree (min, not max — a far-reach spike from interior texture no
+longer "refines" the edge onto a stripe; stripes read t≈1 vs ceramic t≈0.34); (2) a "hole" seed leaking into an
+abstained outer span is filled as part interior (the ceramic sea merged with the outline through the stripes), while
+real holes ringed by refined edge survive. Guided U0 + fracture S35–S40 + helix/hook excluded: rebuilt 100.03 ×
+19.82 mm, 25.35 mm² notch fill from the mirrored left; truth = the intact vendor shot (110.12 × 18.74,
+`exact: false`, ruler-assumed 100 mm both, station ratios within 6 %). Bundled as `broken-bougie`.
+
+**Volant (Sparco wheel, user photo, ✅):** real bug fixed first — glare is now relative to the paper (on a white
+studio backdrop the absolute ≥250 clause doubted all 3 real cutouts; it now applies only on darker mat paper).
+Guided U0 through the hub + notch spans + 3 cutouts/6 bolts trusted (logo/lettering left out): rebuilt
+347.68 × 345.41 mm **= the same-photo intact twin to 0.001 mm**; the 77.5 mm inferred rim arc sits within
+1.0 mm (mean 0.67 mm) of truth; 2167.7 mm² fill. Bundled as `broken-volant` (`truth.exact: true`, same-photo twin;
+the notch is digital, labelled). Suede fuzz keeps measured axis support at 24 % (TAU 0.3 mm) — asserted, disclosed.
+
+**Crankshaft pulley (rendered Ø130, ✅, the symmetric case):** bore Ø30 + 4×Ø8 bolts + 4×Ø6 lightening; rim
+segment snapped off taking 3 holes. Two findings: (1) a circle's every diameter mirrors it, so axis discovery
+drowns in twins — the axis must be asserted (documented, Studio path); (2) real bug — an asserted axis was
+contradiction-checked *before* the fracture exclusion, so holes lost in the break always killed it; asserted axes
+are now re-measured with the picked fracture excluded, like discovered ones. Guided: **130.000 × 130.000 vs exact
+truth**, 6 observed + 3 inferred holes at exact diameters. Bundled as `intact-pulley` + `broken-pulley`
+(rendered, `kind: synthetic`, no stored mask — segmented live). The `colour_candidate` weak-join experiment was
+reverted (unpinned, regressed a pinned height test by 0.07 mm); white-classical stays out, SAM is the white path.
+Bushing skipped as a separate sample: top-down it is the existing washer.
+
+**Studio outline editor (✅ implemented and tested):** drag the built border (SVG handles, undo/redo/reset),
+`POST /api/jobs/{id}/reshape` rebuilds on the same photo/mask/calibration; fracture/exclusion spans re-picked by
+geometry (verified: 61/61 carried spans on the volant notch); report records `reshaped` + `OUTLINE_RESHAPED`;
+overlay white line + texture photo/ember split keep the photographed outline. 3 backend tests.
+
+**UI fixes from `tmp/errors`:** deskew blob conversion no longer round-trips through `fetch(dataURL)` (failed on
+large images after a 200) + styled file picker + Try-again; failure card bottom margin (was glued to feedback);
+solid sticky header (no more see-through overlap); dark 3D walls lifted toward grey (hue kept, black parts readable).
+
+**Showcase for the video:** `tmp/finalimageandinstuctions/` — 5 cases (sprocket unguided, pulley exact, volant,
+bougie, wheel) with inputs, overlays, intact truths, measured numbers and `INSTRUCTIONS.md` (order, clicks,
+voiceover beats, honesty guardrails).
+
+Suite: 196 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 20 (7/20 = 35 % user tmp).

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, Health, JobOptions, JobStatus, Sample } from "./types";
+import type { ApiErrorBody, DeskewResult, Health, JobOptions, JobStatus, Sample } from "./types";
 
 export class ApiError extends Error {
   constructor(public body: ApiErrorBody, public status = 0) {
@@ -54,6 +54,18 @@ export async function startJob(source: JobSource, options: JobOptions): Promise<
   if (options.bar_x_mm !== undefined) form.append("bar_x_mm", String(options.bar_x_mm));
   if (options.bar_y_mm !== undefined) form.append("bar_y_mm", String(options.bar_y_mm));
   if (options.known_length_mm !== undefined) form.append("known_length_mm", String(options.known_length_mm));
+  if (options.deskew_px_per_mm !== undefined) form.append("deskew_px_per_mm", String(options.deskew_px_per_mm));
+  const guide = options.guide;
+  if (guide?.axis) form.append("guide_axis", guide.axis);
+  if (guide?.fracture?.length) form.append("guide_fracture", guide.fracture.join(" "));
+  if (guide?.exclude?.length) form.append("guide_exclude", guide.exclude.join(" "));
+  if (guide?.damage?.length) form.append("guide_damage", guide.damage.join(" "));
+  if (guide?.sources?.length) form.append("guide_sources", guide.sources.join(" "));
+  if (guide?.assert_angle !== undefined) form.append("guide_assert_angle", String(guide.assert_angle));
+  if (guide?.assert_x_mm !== undefined) form.append("guide_assert_x_mm", String(guide.assert_x_mm));
+  if (guide?.assert_y_mm !== undefined) form.append("guide_assert_y_mm", String(guide.assert_y_mm));
+  if (guide?.family_override) form.append("guide_family_override", "true");
+  if (guide?.note?.trim()) form.append("guide_note", guide.note.trim().slice(0, 500));
   form.append("segmenter", options.segmenter);
   form.append("interpreter", options.interpreter);
   form.append("prompt", options.prompt);
@@ -67,6 +79,54 @@ export async function startJob(source: JobSource, options: JobOptions): Promise<
   if (!response.ok) throw await parseError(response);
   const body = (await response.json()) as { job_id: string };
   return body.job_id;
+}
+
+/** The Studio's "flatten" step: a perspective photo of a rectangular part back to top-down. */
+export async function postDeskew(photo: File, corners: [number, number][], length_mm: number,
+                                 width_mm: number): Promise<DeskewResult> {
+  const form = new FormData();
+  form.append("photo", photo);
+  form.append("corners", JSON.stringify(corners));
+  form.append("length_mm", String(length_mm));
+  form.append("width_mm", String(width_mm));
+  let response: Response;
+  try {
+    response = await fetch("/api/deskew", { method: "POST", body: form });
+  } catch {
+    throw new ApiError({ code: "NETWORK", message: "The Re-Forge server can't be reached.", hint: null });
+  }
+  if (!response.ok) throw await parseError(response);
+  return response.json() as Promise<DeskewResult>;
+}
+
+/** Human-in-the-loop: was this result right? Stored on the job. */
+export async function postReshape(jobId: string, outlinePx: number[][], baselinePx: number[][]): Promise<{ job_id: string; status_url: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/reshape`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outline_px: outlinePx, baseline_px: baselinePx }),
+    });
+  } catch {
+    throw new ApiError({ code: "NETWORK", message: "The Re-Forge server can't be reached.", hint: null });
+  }
+  if (!response.ok) throw await parseError(response);
+  return response.json() as Promise<{ job_id: string; status_url: string }>;
+}
+
+export async function postFeedback(jobId: string, verdict: "ok" | "wrong", note: string): Promise<{ ok: boolean; count: number }> {
+  const form = new FormData();
+  form.append("verdict", verdict);
+  form.append("note", note);
+  let response: Response;
+  try {
+    response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/feedback`, { method: "POST", body: form });
+  } catch {
+    throw new ApiError({ code: "NETWORK", message: "The Re-Forge server can't be reached.", hint: null });
+  }
+  if (!response.ok) throw await parseError(response);
+  return response.json() as Promise<{ ok: boolean; count: number }>;
 }
 
 /** A model file, optionally rebuilt by the server with a printer compensation (the spec is re-validated). */

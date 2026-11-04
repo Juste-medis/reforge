@@ -158,6 +158,11 @@ CASES = (
     Case("31_link_yellow_broken", "rendered slotted link with its right ear-tip snapped off", 4.0,
          synthetic="link_broken:7", colour_bgr=(30, 190, 235), rotate_deg=0, tilt=(-2, 3, -1),
          expect="model, rebuilt by mirror"),
+    Case("32_pulley_steel", "rendered crankshaft pulley, Ø130, Ø30 bore, four Ø8 bolts, four Ø6 lightening holes",
+         8.0, synthetic="pulley", colour_bgr=(130, 128, 125), rotate_deg=10, tilt=(2, -3, 1)),
+    Case("33_pulley_cast_broken", "rendered crankshaft pulley with a rim segment snapped off, taking one bolt hole "
+         "and two lightening holes", 8.0, synthetic="pulley_broken:8", colour_bgr=(70, 68, 65), rotate_deg=0,
+         tilt=(-3, 4, -1), expect="model, rebuilt by mirror with the three lost holes inferred"),
 )
 
 
@@ -299,6 +304,16 @@ def _rendered(kind: str) -> Polygon:
         slot = LineString([(cx - 7, cy), (cx + 7, cy)]).buffer(3, quad_segs=32)
         holes = [Point(cx + dx, cy).buffer(3, quad_segs=64) for dx in (-26, 26)]
         return body.difference(slot).difference(holes[0]).difference(holes[1])
+    if kind == "pulley":
+        # A small car's crankshaft pulley, Ø130: Ø30 bore, four Ø8 bolt holes on a Ø60 circle, four Ø6
+        # lightening holes on a Ø96 circle. Mirror-symmetric about both centre lines, like the real part.
+        disc = Point(cx, cy).buffer(65, quad_segs=128)
+        pulley = disc.difference(Point(cx, cy).buffer(15, quad_segs=64))
+        for dx, dy in ((30, 0), (-30, 0), (0, 30), (0, -30)):
+            pulley = pulley.difference(Point(cx + dx, cy + dy).buffer(4, quad_segs=64))
+        for dx, dy in ((33.9, 33.9), (-33.9, 33.9), (33.9, -33.9), (-33.9, -33.9)):
+            pulley = pulley.difference(Point(cx + dx, cy + dy).buffer(3, quad_segs=64))
+        return pulley
     if kind == "l_plate":
         plate = box(cx - 30, cy - 22.5, cx - 15, cy + 22.5).union(box(cx - 30, cy + 7.5, cx + 30, cy + 22.5))
         plate = plate.buffer(-3, quad_segs=16).buffer(3, quad_segs=16)
@@ -308,16 +323,17 @@ def _rendered(kind: str) -> Polygon:
     raise ValueError(kind)
 
 
-def _meander_cut(cx: float, cy: float, x_keep: float, y_half: float, seed: int) -> Polygon:
+def _meander_cut(cx: float, cy: float, x_keep: float, y_half: float, seed: int, x_far: float = 60.0) -> Polygon:
     """The rough chord of ``broken_shim`` (scene.py), for the CENTRE-rendered parts: everything past
-    ``x_keep`` is removed. The caller keeps the cut clear of the holes."""
+    ``x_keep`` is removed. The caller keeps the cut clear of the holes; ``x_far`` must clear the part's edge
+    or the rim cap survives as an island."""
     rng = np.random.default_rng(seed)
     y = np.arange(-y_half, y_half + 0.0001, 0.25)
     meander = sum(a * np.sin(2 * np.pi * y / wavelength + rng.uniform(0, 2 * np.pi))
                   for a, wavelength in ((1.0, 13.0), (0.5, 5.0), (0.25, 2.1)))
     x = x_keep + meander + gaussian_filter1d(rng.normal(0.0, 0.15, len(y)), 1.0)
     return Polygon([*((cx + xi, cy + yi) for xi, yi in zip(x, y, strict=True)),
-                    (cx + 60, cy + y_half), (cx + 60, cy - y_half)])
+                    (cx + x_far, cy + y_half), (cx + x_far, cy - y_half)])
 
 
 def place_synthetic(case: Case) -> Placed:
@@ -355,6 +371,11 @@ def place_synthetic(case: Case) -> Placed:
         # Right ear-tip snapped off at cx + 31.5: both holes (at ±26) and the slot survive.
         intact = _rendered("link")
         poly = intact.difference(_meander_cut(CENTRE[0], CENTRE[1], 31.5, 10.0, int(seed)))
+    elif kind == "pulley_broken":
+        # Right rim segment snapped off at cx + 22: the bore survives to pin the mirror; the right bolt hole
+        # (x 26–34) and both right lightening holes (x 31–37) are lost in the break and must come back by mirror.
+        intact = _rendered("pulley")
+        poly = intact.difference(_meander_cut(CENTRE[0], CENTRE[1], 22.0, 66.0, int(seed), 70.0))
     else:
         poly = _rendered(kind)
     poly = affinity.rotate(poly, case.rotate_deg, origin=CENTRE)

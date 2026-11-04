@@ -105,10 +105,11 @@ class _Outline:
     polygon: Polygon
     holes: list[tuple[str, np.ndarray, float]]
     centroid: np.ndarray
+    damage: tuple = ()  # user-marked damage-hole polygons (prepared): mirrors landing inside are no evidence
 
 
 def _prepare(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float, float], float]] | None,
-             exclude: np.ndarray | None) -> _Outline:
+             exclude: np.ndarray | None, damage: tuple = ()) -> _Outline:
     samples = resample_closed(outline_mm, SAMPLE_MM)
     dense = resample_closed(outline_mm, DENSE_MM)
     centroid = samples.mean(axis=0)
@@ -120,12 +121,22 @@ def _prepare(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float, float],
     polygon = Polygon(outline_mm).buffer(0)
     shapely.prepare(polygon)
     hole_list = [(hid, np.asarray(c, dtype=np.float64), float(r)) for hid, c, r in holes or []]
-    return _Outline(samples, cKDTree(dense), dense, dense_fracture, polygon, hole_list, centroid)
+    prepped = []
+    for d in damage:  # (N, 2) rings of user-marked damage holes
+        poly = Polygon(np.asarray(d, dtype=np.float64)).buffer(0)
+        shapely.prepare(poly)
+        prepped.append(poly)
+    return _Outline(samples, cKDTree(dense), dense, dense_fracture, polygon, hole_list, centroid, tuple(prepped))
+
+
+def _in_damage(image: np.ndarray, o: _Outline) -> bool:
+    return bool(o.damage) and any(shapely.contains_xy(d, image[0], image[1]) for d in o.damage)
 
 
 def _hole_pairs(axis: MirrorAxis, o: _Outline) -> tuple[list[tuple[np.ndarray, np.ndarray]], int]:
     """Matched (centre, partner centre) pairs, and how many holes contradict the axis. A hole on the axis is its own
-    partner: it pins the axis's position (two of them pin the axis)."""
+    partner: it pins the axis's position (two of them pin the axis). A mirror landing in user-marked damage is no
+    evidence either way, like one landing nearest a fracture span."""
     pairs, mismatches = [], 0
     for _, centre, radius in o.holes:
         image = axis.reflect(centre)[0]
@@ -133,6 +144,8 @@ def _hole_pairs(axis: MirrorAxis, o: _Outline) -> tuple[list[tuple[np.ndarray, n
         if (np.linalg.norm(partner[1] - image) <= TAU_MM
                 and abs(partner[2] - radius) <= max(0.05, 0.03 * max(radius, partner[2]))):
             pairs.append((centre, partner[1]))
+        elif _in_damage(image, o):
+            continue
         elif not o.dense_fracture[o.tree.query(image)[1]]:
             mismatches += 1
     return pairs, mismatches
@@ -257,12 +270,14 @@ def _sweep(o: _Outline) -> list[MirrorAxis]:
 
 
 def find_mirror_axes(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float, float], float]] | None = None, *,
-                     exclude_mm: np.ndarray | None = None, keep: int = 3, seed: int = 0) -> list[MirrorAxis]:
+                     exclude_mm: np.ndarray | None = None, keep: int = 3, seed: int = 0,
+                     damage: tuple = ()) -> list[MirrorAxis]:
     """The best mirror axes of a footprint, refined and ranked by support then RMS, with ids A0, A1, …
 
     ``holes`` are (id, centre, radius). ``exclude_mm`` are points (a suspected fracture) left out of the support.
+    ``damage`` are (N, 2) rings of user-marked damage holes: hole mirrors landing inside are no evidence.
     """
-    o = _prepare(outline_mm, holes, exclude_mm)
+    o = _prepare(outline_mm, holes, exclude_mm, damage)
     candidates: list[MirrorAxis] = []
     for k, (id_a, ca, ra) in enumerate(holes or []):
         for id_b, cb, rb in (holes or [])[k + 1:]:
@@ -368,12 +383,28 @@ def local_support(axis: MirrorAxis, points_mm: np.ndarray, outline_mm: np.ndarra
     return float((dist <= TAU_MM).mean()) if len(dist) else 0.0
 
 
+def asserted_axis(angle_deg: float, outline_mm: np.ndarray,
+                  holes: list[tuple[str, tuple[float, float], float]] | None = None, damage: tuple = (), *,
+                  seed: int = 0, point: np.ndarray | None = None) -> MirrorAxis:
+    """A user-asserted mirror axis at ``angle_deg`` through ``point`` (the outline's centroid when None). Measured
+    like any candidate (support, holes, bootstrap) but never refined and never filtered: the user takes
+    responsibility, the report shows the measured support. Id U0 — the only axis the support gate doesn't apply to
+    (a contradicted U0 still fails)."""
+    o = _prepare(outline_mm, holes, None, damage)
+    through = o.centroid if point is None else np.asarray(point, dtype=np.float64)
+    direction = np.array([np.cos(np.radians(angle_deg)), np.sin(np.radians(angle_deg))])
+    scored = _score(replace(_axis(through, direction, through, ("user-asserted",)), axis_id="U0"), o)
+    return replace(_bootstrap(scored, o, np.random.default_rng(seed)), axis_id="U0", sources=("user-asserted",),
+                   offset_ambiguity_mm=_ambiguity(scored, o))
+
+
 def rescore(axis: MirrorAxis, outline_mm: np.ndarray, holes: list[tuple[str, tuple[float, float], float]] | None,
-            exclude_mm: np.ndarray | None, *, seed: int = 0) -> MirrorAxis:
-    """``axis`` refined and re-measured with a different set of excluded (fracture) points; its id is kept."""
-    o = _prepare(outline_mm, holes, exclude_mm)
-    refined = _refine(axis, o)
-    if not _same(axis, refined):  # refinement wandered off: keep the given axis, re-measured
+            exclude_mm: np.ndarray | None, *, seed: int = 0, damage: tuple = (), refine: bool = True) -> MirrorAxis:
+    """``axis`` refined and re-measured with a different set of excluded (fracture) points; its id is kept.
+    ``refine=False`` only re-measures (a user-asserted axis keeps the user's angle)."""
+    o = _prepare(outline_mm, holes, exclude_mm, damage)
+    refined = _refine(axis, o) if refine else _score(axis, o)
+    if refine and not _same(axis, refined):  # refinement wandered off: keep the given axis, re-measured
         refined = _score(axis, o)
     return replace(_bootstrap(refined, o, np.random.default_rng(seed)), axis_id=axis.axis_id, sources=axis.sources,
                    offset_ambiguity_mm=_ambiguity(refined, o))

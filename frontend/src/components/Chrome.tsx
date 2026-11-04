@@ -46,6 +46,7 @@ export function Header({ route, health }: { route: Route; health: Health | null 
         <nav className="nav" aria-label="Main">
           <a href={href({ name: "home", anchor: "how" })} className="nav-link hide-sm">How it works</a>
           <a href={href({ name: "home", anchor: "examples" })} className="nav-link hide-sm">Examples</a>
+          <a href={href({ name: "studio" })} className="nav-link hide-sm" aria-current={at("studio")}>Studio</a>
           <a href={href({ name: "repairs" })} className="nav-link" aria-current={at("repairs")}>
             My repairs{count > 0 && <span className="count" aria-label={`${count} saved`}>{count}</span>}
           </a>

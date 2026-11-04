@@ -36,22 +36,29 @@ class Verified:
 
 
 def verify(analysis: PartAnalysis, segmented: SegmentedOutline, axes: list[MirrorAxis],
-           outline_mm: np.ndarray) -> Verified:
+           outline_mm: np.ndarray, *, holes_only: bool = False) -> Verified:
+    """``holes_only`` is the Studio's interior-damage case (marked damage holes, intact outline): there is no outline
+    fracture to pick, so the fracture notes don't apply."""
     notes: list[Note] = []
     axis = None
     if analysis.mirror_axis_id != NONE_ID:
         chosen = next((a for a in axes if a.axis_id == analysis.mirror_axis_id), None)
         if chosen is None:
             notes.append(Note("AXIS_UNKNOWN", f"{analysis.mirror_axis_id} is not a candidate axis.", "rejected"))
-        elif chosen.support < MIN_AXIS_SUPPORT:
-            notes.append(Note("AXIS_WEAK", f"{chosen.axis_id} has only {chosen.support:.0%} measured support "
-                                           f"(needs {MIN_AXIS_SUPPORT:.0%}); no mirror reconstruction.", "rejected"))
         elif chosen.contradicted_by_holes:
             notes.append(Note("AXIS_HOLES", f"{chosen.axis_id} maps holes onto solid material "
                                             f"({chosen.hole_mismatches} against, {chosen.hole_matches} for).",
                               "rejected"))
+        elif chosen.support < MIN_AXIS_SUPPORT and chosen.axis_id != "U0":
+            notes.append(Note("AXIS_WEAK", f"{chosen.axis_id} has only {chosen.support:.0%} measured support "
+                                           f"(needs {MIN_AXIS_SUPPORT:.0%}); no mirror reconstruction.", "rejected"))
         else:
             axis = chosen
+            if chosen.support < MIN_AXIS_SUPPORT:  # U0 only: asserted by the user, who takes responsibility
+                notes.append(Note(
+                    "USER_ASSERTED_AXIS", f"U0 is your asserted axis at {chosen.angle_deg:.1f}° with only "
+                                          f"{chosen.support:.0%} measured support: the rebuild is your hypothesis, "
+                                          "checked only for containment and hole contradictions.", "warning"))
             if (chosen.offset_ambiguity_mm or 0.0) > 0.5:
                 notes.append(Note("AXIS_OFFSET_AMBIGUOUS",
                                   f"Nothing pins {chosen.axis_id} along the part: it can slide "
@@ -82,10 +89,10 @@ def verify(analysis: PartAnalysis, segmented: SegmentedOutline, axes: list[Mirro
 
     unpicked = [s.seg_id for s in segmented.segments
                 if s.kind in ("irregular", "broken") and s.seg_id not in analysis.fracture_segment_ids]
-    if unpicked:
+    if unpicked and not holes_only:
         notes.append(Note("FRACTURE_UNPICKED", f"{', '.join(unpicked)} look irregular but weren't picked as fracture "
                                                "edges; they're left as photographed.", "warning"))
-    if analysis.is_broken and not accepted:
+    if analysis.is_broken and not accepted and not holes_only:
         notes.append(Note("NO_FRACTURE", "The part was called broken, but no fracture segment was accepted: nothing "
                                          "is reconstructed.", "warning"))
     if not analysis.is_broken and accepted:

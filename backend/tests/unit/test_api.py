@@ -95,6 +95,71 @@ def test_invalid_thickness_is_rejected(client: TestClient, photo_bytes: bytes) -
     assert _post(client, photo_bytes, thickness_mm="0").status_code == 422
 
 
+def test_axis_pivot_needs_both_coordinates(client: TestClient, photo_bytes: bytes) -> None:
+    response = _post(client, photo_bytes, guide_assert_x_mm="10.0")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "GUIDE_BAD_POINT"
+
+
+def test_deskew_flattens_a_quad_and_reports_scale(client: TestClient) -> None:
+    import base64
+
+    import numpy as np
+
+    img = np.full((200, 300, 3), 255, np.uint8)
+    corners = [[40, 30], [260, 50], [240, 170], [30, 150]]
+    cv2.fillConvexPoly(img, np.array(corners, np.int32), (20, 20, 20))
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    response = client.post("/api/deskew", files={"photo": ("quad.png", buf.tobytes(), "image/png")},
+                           data={"corners": json.dumps(corners), "length_mm": "300.0", "width_mm": "200.0"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["px_per_mm"] > 0 and body["length_mm"] == 300.0 and len(body["corners_used"]) == 4
+    flat = cv2.imdecode(np.frombuffer(base64.b64decode(body["png_b64"]), np.uint8), cv2.IMREAD_COLOR)
+    mx, my = body["margin_px"]
+    inner = flat[my:flat.shape[0] - my, mx:flat.shape[1] - mx]
+    assert inner.mean() < 40.0  # the quad fills the rectified frame inside the margin
+    bad = client.post("/api/deskew", files={"photo": ("quad.png", buf.tobytes(), "image/png")},
+                      data={"corners": "[[0, 0]]", "length_mm": "300.0", "width_mm": "200.0"})
+    assert bad.status_code == 422
+    assert bad.json()["error"]["code"] == "DESKEW_BAD_CORNERS"
+
+
+def test_guided_relaunch_reuses_segmentation_and_records_guidance(client: TestClient, photo_bytes: bytes) -> None:
+    """The Studio's path: a finished job's candidates steer a second run on the same segmentation."""
+    first = _post(client, photo_bytes)
+    assert first.status_code == 200, first.text
+    job_id = first.json()["job_id"]
+    recon = client.get(f"/api/jobs/{job_id}").json()["reconstruction"]
+    assert recon and recon["all_holes"], "the Studio needs the candidates of a finished run"
+    axis = recon["axes"][0]["id"] if recon["axes"] else "none"
+    rough = [s["id"] for s in recon["segments"] if s["kind"] in ("irregular", "broken")]
+    response = client.post("/api/jobs", data={"from_job": job_id, "thickness_mm": "3.02",
+                                              "segmenter": "classical", "guide_axis": axis,
+                                              "guide_fracture": " ".join(rough[:4]),
+                                              "guide_note": "studio test"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["report"]["segmentation"]["method"].startswith("reused")
+    codes = [n["code"] for n in body["report"]["reconstruction"]["verification"]]
+    assert "USER_GUIDED" in codes
+    assert body["report"]["reconstruction"]["guided"]["note"] == "studio test"
+    reread = client.get(f"/api/jobs/{body['job_id']}").json()
+    assert reread["request"]["guide_axis"] == axis
+
+
+def test_feedback_is_stored_and_shown(client: TestClient, photo_bytes: bytes) -> None:
+    job_id = _post(client, photo_bytes).json()["job_id"]
+    voted = client.post(f"/api/jobs/{job_id}/feedback", data={"verdict": "wrong", "note": "missed the crack"})
+    assert voted.status_code == 200
+    assert voted.json() == {"ok": True, "count": 1}
+    [entry] = client.get(f"/api/jobs/{job_id}").json()["feedback"]
+    assert entry["verdict"] == "wrong" and entry["note"] == "missed the crack" and entry["created_at"]
+    bad = client.post(f"/api/jobs/{job_id}/feedback", data={"verdict": "maybe"})
+    assert bad.status_code == 422
+
+
 def test_sam_without_key_is_a_typed_error(client: TestClient, photo_bytes: bytes) -> None:
     response = _post(client, photo_bytes, segmenter="sam")
     assert response.status_code == 422
@@ -225,7 +290,9 @@ def test_examples_are_listed_labelled_credited_and_runnable(client: TestClient) 
     samples = client.get("/api/samples").json()
     assert {s["id"] for s in samples} >= {"broken-flange", "broken-sprocket", "square-gasket", "intact-sprocket"}
     for s in samples:
-        assert s["kind"] == "synthetic" and "Not a " in s["label"]
+        assert s["kind"] in ("synthetic", "photograph") and "Not a " in s["label"]
+        if s.get("mask"):  # a guided Studio session is a real photo, never a composite
+            assert s["kind"] == "photograph"
         if s.get("rendered"):  # a rendered part: no photo, so nothing to credit, and the label says so
             assert "rendered part" in s["label"] and "credit" not in s
         elif s.get("provided_by") == "user":  # a photo the user supplied: permission, not a Commons licence
@@ -248,6 +315,76 @@ def test_examples_are_listed_labelled_credited_and_runnable(client: TestClient) 
     assert report["reconstruction"]["completion"] is None  # intact: nothing may be invented
     status = client.get(f"/api/jobs/{response.json()['job_id']}").json()
     assert status["request"]["sample"] == "square-gasket" and status["request"]["sample_info"]["kind"] == "synthetic"
+    # And a real photo of a real wheel with a stored Studio session: the hidden vents come back from the mask.
+    wheel = next(s for s in samples if s["id"] == "broken-wheel")
+    response = client.post("/api/jobs", data={"thickness_mm": str(wheel["thickness_mm"]),
+                                              "segmenter": "classical", "sample": "broken-wheel"})
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    size = report["part"]["size_mm"]
+    assert abs(size["length"] - wheel["truth"]["length_mm"]) < 0.5  # ruler-assumed, not exact
+    assert abs(size["width"] - wheel["truth"]["width_mm"]) < 0.5
+    assert report["reconstruction"]["completion"]["axis"] == "U0"
+    holes = report["part"]["holes"]
+    assert len(holes) == 23  # 20 trusted vents observed, 3 hidden ones inferred
+    assert sum(h["status"] == "INFERRED" for h in holes) == 3
+    assert report["segmentation"]["method"] == "sample-mask"  # the stored SAM mask, no fresh AI
+    # And a real photo of a really broken spark plug: the missing wall comes back from the stored session.
+    bougie = next(s for s in samples if s["id"] == "broken-bougie")
+    response = client.post("/api/jobs", data={"thickness_mm": str(bougie["thickness_mm"]),
+                                              "segmenter": "classical", "sample": "broken-bougie"})
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    size = report["part"]["size_mm"]
+    assert abs(size["length"] - 100.026) < 0.5 and abs(size["width"] - 19.816) < 0.5  # the verified accept
+    assert report["reconstruction"]["completion"]["axis"] == "U0"
+    regions = report["reconstruction"]["completion"]["regions"]
+    assert any(r["filled"] for r in regions)  # the notch fill
+    assert any(r["echo"] and "user-excluded" in r["reason"] for r in regions)  # helix and side electrode
+    assert report["reconstruction"]["guided"]["exclude_ids"] == [
+        "S43", "S44", "S45", "S46", "S47", "S48", "S49", "S50", "S51", "S52", "S53", "S54", "S55",
+        "S56", "S57"]
+    assert report["segmentation"]["method"] == "sample-mask"
+    # And a real photo of a steering wheel with a digitally-cut notch: the rim arc comes back, against the exact
+    # same-photo twin.
+    volant = next(s for s in samples if s["id"] == "broken-volant")
+    response = client.post("/api/jobs", data={"thickness_mm": str(volant["thickness_mm"]),
+                                              "segmenter": "classical", "sample": "broken-volant"})
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    size = report["part"]["size_mm"]
+    assert abs(size["length"] - volant["truth"]["length_mm"]) < 0.1
+    assert abs(size["width"] - volant["truth"]["width_mm"]) < 0.1
+    assert report["reconstruction"]["completion"]["axis"] == "U0"
+    assert report["reconstruction"]["completion"]["added_area_mm2"] > 2000  # the rim-arc fill
+    assert len(report["part"]["holes"]) == 9  # 3 cutouts + 6 hub bolts, logo and lettering left out
+    assert report["segmentation"]["method"] == "sample-mask"
+    # And a rendered crankshaft pulley with a snapped-off rim segment: the stored guidance rebuilds the cap and
+    # all three lost holes, against the exact rendered truth.
+    pulley = next(s for s in samples if s["id"] == "broken-pulley")
+    response = client.post("/api/jobs", data={"thickness_mm": str(pulley["thickness_mm"]),
+                                              "segmenter": "classical", "sample": "broken-pulley"})
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    size = report["part"]["size_mm"]
+    assert abs(size["length"] - pulley["truth"]["length_mm"]) < 0.1
+    assert abs(size["width"] - pulley["truth"]["width_mm"]) < 0.1
+    assert report["reconstruction"]["completion"]["axis"] == "U0"
+    holes = report["part"]["holes"]
+    assert len(holes) == 9  # 6 surviving holes observed, 3 lost ones inferred
+    assert sum(h["status"] == "INFERRED" for h in holes) == 3
+    assert report["segmentation"]["method"] == "classical-fallback"  # rendered: segmented live, no stored mask
+    # And the intact pulley twin: measured whole, nothing invented.
+    intact = next(s for s in samples if s["id"] == "intact-pulley")
+    response = client.post("/api/jobs", data={"thickness_mm": str(intact["thickness_mm"]),
+                                              "segmenter": "classical", "sample": "intact-pulley"})
+    assert response.status_code == 200, response.text
+    report = response.json()["report"]
+    size = report["part"]["size_mm"]
+    assert abs(size["length"] - intact["truth"]["length_mm"]) < 0.1
+    assert abs(size["width"] - intact["truth"]["width_mm"]) < 0.1
+    assert report["reconstruction"]["completion"] is None
+    assert len(report["part"]["holes"]) == 9
     # And a real photo of a really broken sprocket: the missing half comes back, against the exact truth.
     sprocket = next(s for s in samples if s["id"] == "broken-sprocket")
     response = client.post("/api/jobs", data={"thickness_mm": str(sprocket["thickness_mm"]),

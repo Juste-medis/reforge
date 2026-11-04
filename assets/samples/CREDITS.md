@@ -38,27 +38,6 @@ The sprocket composites are made by `backend/tools/make_wanted_samples.py` from 
 - **Size basis:** CHOSEN 70.0 mm outside diameter (same basis as the broken one).
 - **Thickness:** CHOSEN 5.0 mm, a plausible single-sprocket thickness.
 
-## `heart.jpg`, `heart.thumb.jpg`
-
-- **Source photo:** tmp/realphotos.2/IMG_1066.jpeg (supplied by the user for the examples).
-- **Part:** a real flat metal heart (engraved trinket), intact: nothing to rebuild.
-- **Size basis:** MEASURED 51.8 mm wide (caliper, tmp/coeur_a_mesurer.jpg); the height follows the photo's aspect (shot slightly off vertical).
-- **Thickness:** CHOSEN 3.0 mm, a plausible trinket thickness.
-
-## `broken-heart.jpg`, `broken-heart.thumb.jpg`
-
-- **Source photo:** tmp/realphotos.2/IMG_1066.jpeg (supplied by the user for the examples).
-- **Part:** the same metal heart with its right lobe-tip chipped off, rebuilt by mirror.
-- **Size basis:** MEASURED 51.8 mm wide intact (same basis as the intact one).
-- **Thickness:** CHOSEN 3.0 mm.
-
-## `heart-second-shot.jpg`, `heart-second-shot.thumb.jpg`
-
-- **Source photo:** tmp/realpictures/IMG_1061.jpeg (supplied by the user for the examples).
-- **Part:** the same metal heart from the user's second mat photo, intact.
-- **Size basis:** MEASURED 51.8 mm wide (same trinket, same caliper as the first heart shot).
-- **Thickness:** CHOSEN 3.0 mm.
-
 ## `broken-sprocket-r2.jpg`, `broken-sprocket-r2.thumb.jpg`
 
 - **Source photo:** tmp/wanteds/Image collée (3).png (supplied by the user for the examples).
@@ -73,11 +52,25 @@ The sprocket composites are made by `backend/tools/make_wanted_samples.py` from 
 - **Size basis:** CHOSEN 50.0 mm long (product shot, no scale; a plausible blade).
 - **Thickness:** CHOSEN 2.5 mm, a plausible blade thickness.
 
-## `broken-heart-second-shot.jpg`, `broken-heart-second-shot.thumb.jpg`
-
-- **Source photo:** tmp/realpictures/IMG_1061.jpeg (supplied by the user for the examples).
-- **Part:** the same metal heart from the second mat photo, left lobe-tip chipped off.
-- **Size basis:** MEASURED 51.8 mm wide intact (same basis as the intact one).
-- **Thickness:** CHOSEN 3.0 mm.
-
 `broken-flange.jpg`, `broken-bracket.jpg`, `l-plate.jpg`, `broken-flange-50.jpg`, `broken-bumper-bracket.jpg`, `broken-adjuster-link.jpg`, `broken-shim.jpg`, `broken-washer.jpg`, `broken-slotted-link.jpg` are fully rendered (no photo). The rest of the repository is Apache-2.0.
+
+## `broken-wheel.png`, `broken-wheel.thumb.jpg`
+
+- **Source photo:** tmp/realpicts/ALCARJante.casse.png (supplied by the user for the examples).
+- **Part:** ALCAR steel car wheel, three right vents hidden by a white blob.
+- **Size basis:** RULER ASSUMPTION: longest side assumed 400 mm (a 15-inch steel wheel) on both the broken and the intact photo, so the comparison is valid while the absolute scale is assumed.
+- **Thickness:** CHOSEN 10 mm: rim centre assumed; the demo is the vent rebuild.
+
+## `broken-bougie.png`, `broken-bougie.thumb.jpg`
+
+- **Source photo:** tmp/realpicts/bougie.casse.png (supplied by the user for the examples).
+- **Part:** Bosch EVO spark plug, right ceramic wall and hex flat broken out.
+- **Size basis:** RULER ASSUMPTION: longest side assumed 100 mm on both the broken and the intact photo; station width ratios agree within 6 % across the two vendor shots, absolute scale assumed.
+- **Thickness:** CHOSEN 10 mm placeholder; the demo is the silhouette rebuild.
+
+## `broken-volant.png`, `broken-volant.thumb.jpg`
+
+- **Source photo:** tmp/wanteds/Image collée (2).png (supplied by the user for the examples).
+- **Part:** Sparco suede steering wheel, notch cut digitally out of the upper-right rim.
+- **Size basis:** RULER ASSUMPTION: longest side assumed 350 mm; the break extents don't change the photo's longest side, so the broken and intact twins share the exact same scale — the comparison is exact, only the absolute scale is assumed.
+- **Thickness:** CHOSEN 10 mm placeholder; the demo is the rim-arc rebuild.

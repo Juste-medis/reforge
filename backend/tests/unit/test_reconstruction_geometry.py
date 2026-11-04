@@ -136,3 +136,29 @@ def test_a_hole_lost_in_the_break_is_inferred_from_its_mirror() -> None:
     # axis angle error (0.029°) was 4x its bootstrap σ, so U covers it through the RMS term: D5 replaces the
     # angle σ with a segment jackknife.
     assert np.hypot(hole.center[0] - (CX + 30), hole.center[1] - CY) <= c.inferred_uncertainty_mm()
+
+
+def test_user_excluded_asymmetry_is_echo_not_unexplained() -> None:
+    """A designed asymmetric tab (a plug's side electrode): its mirror is reported as user-excluded echo —
+    kept as photographed, never filled, never counted — instead of unexplained asymmetry."""
+    part = broken_bracket(LAYOUT, seed=0)
+    tab = box(CX - 20, CY - 20, CX - 13, CY - 12)
+    assert tab.intersection(part).area > 0, "the tab must attach to the part"
+    part = part.union(tab)
+    pts = _outline(part)
+    so = segment_outline(pts)
+    fracture = [s.seg_id for s in _irregular(so)]
+    exclude = [s.seg_id for s in so.segments
+               if tab.contains(Point(s.midpoint_mm)) or Point(s.midpoint_mm).within(tab.buffer(0.5))]
+    assert exclude, "the tab must own segments"
+    axes = find_mirror_axes(so.points, HOLES)
+    axis = next(a for a in axes if abs((a.angle_deg - 90.0 + 90) % 180 - 90) < 0.05)
+    plain = complete_by_mirror(so.points, HOLES, axis, fracture, so)
+    unexplained = [r for r in plain.regions if not r.filled and not r.echo]
+    assert sum(r.area_mm2 for r in unexplained) > 5.0, "the tab's mirror counts without the exclusion"
+    guided = complete_by_mirror(so.points, HOLES, axis, fracture, so, exclude_ids=exclude)
+    echo = [r for r in guided.regions if r.echo]
+    assert echo and all("user-excluded" in r.reason for r in echo)
+    now = sum(r.area_mm2 for r in guided.regions if not r.filled and not r.echo)
+    assert now < sum(r.area_mm2 for r in unexplained) - 5.0
+    assert guided.added_area_mm2 == pytest.approx(plain.added_area_mm2), "the break fill is unchanged"

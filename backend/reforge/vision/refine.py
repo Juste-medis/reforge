@@ -41,6 +41,10 @@ HOLE_MAX_PAPER_DELTA_E = 5.0  # 90th percentile over the hole's core, lightness 
 HOLE_MIN_COMPACTNESS = 0.75  # 4πA/P²: 1 for a circle; a round hole that looks off-colour is still kept
 HOLE_PAPER_RADIUS_MM = 15.0  # paper around the hole is the colour reference, so a lighting gradient doesn't count
 BAND_SATURATION_FRACTION = 0.05
+LOCAL_ABSTAIN_T = 0.4  # inside-vs-outside t step below which a band pixel keeps the segmenter's edge: with
+# no local edge (white ceramic on white: ~0.05; metal on white: ~1.0) the contour would close through interior
+# texture (stripes, print) instead of the true silhouette (bougie, 2026-11-04). Only sampled where the band spans
+# >= 3 px: below that (soft thumbnails) the old behaviour stands, since the test itself is unresolved.
 
 
 @dataclass(frozen=True)
@@ -208,6 +212,45 @@ def refine_profile(
     t_clipped = np.clip(t, 0.0, 1.0).astype(np.float32)
     field[edge_band] = t_clipped[edge_band]
     field[hole_zone] = t_clipped[hole_zone]
+    abstain = np.zeros(mask.shape, bool)
+    if refined and band_px >= 3:  # needs a resolved band to sample across (see LOCAL_ABSTAIN_T)
+        # Normals from the UNFILLED mask, so holes count as outside; outer boundary only (interior texture still
+        # traces as hole candidates, honestly excluded as non-paper — abstaining inside would split real holes).
+        signed = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5) - cv2.distanceTransform(
+            (1 - mask.astype(np.uint8)).astype(np.uint8), cv2.DIST_L2, 5)
+        gy, gx = np.gradient(signed.astype(np.float32))
+        norm = np.hypot(gx, gy) + 1e-9
+        yy, xx = np.mgrid[0:mask.shape[0], 0:mask.shape[1]].astype(np.float32)
+        nx, ny = gx / norm, gy / norm
+        # Two reaches, min: a real edge step is visible at both scales, while interior texture (a printed
+        # stripe 23 px inside the edge) spikes only the far reach — max would "refine" the edge onto the texture and
+        # dive (live bougie finding, 2026-11-04: blue stripes read t~1, white ceramic t~0.34). Both reaches must agree.
+        step = np.full(mask.shape, np.inf, np.float32)
+        for reach in (float(band_px + 1), float(2 * band_px + 3)):
+            xin = np.clip(xx + nx * reach, 0, mask.shape[1] - 1)
+            yin = np.clip(yy + ny * reach, 0, mask.shape[1] - 1)
+            xout = np.clip(xx - nx * reach, 0, mask.shape[1] - 1)
+            yout = np.clip(yy - ny * reach, 0, mask.shape[0] - 1)
+            tin = cv2.remap(t_clipped, xin, yin, cv2.INTER_LINEAR)
+            tout = cv2.remap(t_clipped, xout, yout, cv2.INTER_LINEAR)
+            step = np.minimum(step, np.abs(tin - tout))
+        abstain = edge_band & (step < LOCAL_ABSTAIN_T)
+        field[abstain] = m8[abstain].astype(np.float32)
+        # A "hole" that leaks into an abstained outer span is no hole: it is part interior in disguise (white ceramic
+        # reads t~0.34, paper-like, and touches the white background through the contrast-free edge). A real hole is
+        # ringed by refined edge, so only components adjacent to the abstained OUTER band are filled; weak-arc and rim
+        # holes survive (live bougie finding, 2026-11-04: the ceramic sea merged with the outline through the stripes).
+        if hole_zone.any() and abstain.any():
+            touch = cv2.dilate(hole_regions, _disk(1)).astype(bool) & abstain
+            if touch.any():
+                leak_labels = np.unique(
+                    labels[cv2.dilate(touch.astype(np.uint8), _disk(2)).astype(bool) & (labels > 0)])
+                for lab_id in leak_labels:
+                    if not (labels == lab_id).any():
+                        continue
+                    fill = cv2.dilate((labels == lab_id).astype(np.uint8), kernel).astype(bool) & hole_zone
+                    field[fill] = 1.0
+                    hole_zone[fill] = False
 
     padded = np.pad(field, 1)
     contours = [c[:, ::-1] - 1.0 for c in find_contours(padded, 0.5)]  # (row, col) → (x, y) px
@@ -235,6 +278,7 @@ def refine_profile(
             "PROFILE_MULTIPLE_REGIONS", f"{len(big_outside)} other region(s) ignored; only the largest part is used."))
 
     paper_l_sigma = 1.4826 * float(np.median(np.abs(lab[background][:, 0] - paper[0]))) + 1.0
+    paper_bright = float(np.median(image.max(axis=2)[background]))
     yy, xx = np.nonzero(background)
     holes: list[HoleCandidate] = []
     for i in (i for i in others if i not in big_outside):
@@ -247,7 +291,11 @@ def refine_profile(
         if not inside.any():
             continue
         bright = image.max(axis=2)[inside]
-        glare = float(((lab[inside][:, 0] > paper[0] + 3 * paper_l_sigma) | (bright >= 250)).mean()) > GLARE_FRACTION
+        # Glare is relative to the paper: on a white studio backdrop (paper itself ≥250) a white hole interior is
+        # expected, not a highlight — the absolute clause would doubt every true hole (live volant finding,
+        # 2026-11-04: three real cutouts doubted as glare). It only applies on darker (mat) paper.
+        glare = float(((lab[inside][:, 0] > paper[0] + 3 * paper_l_sigma)
+                       | ((bright >= 250) & (paper_bright < 235))).mean()) > GLARE_FRACTION
         agrees = float((~mask[inside]).mean()) > 0.5
         core = cv2.erode(region, kernel).astype(bool)
         core = core if core.sum() >= 9 else inside
@@ -266,6 +314,13 @@ def refine_profile(
     outer_px = np.clip(np.round(view.mm_to_px(outer_raw.points_mm)).astype(int), 0,
                        np.array(mask.shape[::-1]) - 1)
     shift_px = distance[outer_px[:, 1], outer_px[:, 0]]
+    kept = float(abstain[outer_px[:, 1], outer_px[:, 0]].mean()) if refined else 0.0
+    if kept > 0.02:
+        warnings.append(ProfileWarning(
+            "PROFILE_PARTIALLY_UNREFINED",
+            f"{kept:.0%} of the boundary kept the segmenter's edge: no local contrast there (a white region on a "
+            f"white background), so sub-pixel refinement abstained instead of tracing interior texture. Those spans "
+            f"are pixel-precise, not sub-pixel."))
     if refined and float((shift_px >= band_px - 0.5).mean()) > BAND_SATURATION_FRACTION:
         warnings.append(ProfileWarning(
             "PROFILE_BAND_SATURATED",

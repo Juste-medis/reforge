@@ -18,6 +18,7 @@ shown to the user), so a failed run can be diagnosed afterwards. Neither is serv
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import json
 import re
@@ -32,6 +33,7 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from shapely.geometry import Polygon
 
 from reforge.api.jobs import JobRegistry
 from reforge.capture.pose import focal_35mm_from_exif
@@ -53,6 +55,7 @@ OUTPUTS = {
     "texture.jpg": "image/jpeg",
     "overlay.png": "image/png",
     "setofmark.png": "image/png",
+    "mask.png": "image/png",
 }
 SAMPLES_DIR = REPO_ROOT / "assets" / "samples"
 SECURITY_HEADERS = {
@@ -84,7 +87,9 @@ def load_samples(samples_dir: Path = SAMPLES_DIR) -> list[dict]:
     if not manifest.is_file():
         return []
     samples = json.loads(manifest.read_text(encoding="utf-8"))
-    return [s for s in samples if SAMPLE_ID.fullmatch(s.get("id", "")) and (samples_dir / s["file"]).is_file()]
+    return [s for s in samples
+            if SAMPLE_ID.fullmatch(s.get("id", "")) and (samples_dir / s["file"]).is_file()
+            and ("mask" not in s or (samples_dir / s["mask"]).is_file())]
 
 
 def _public_sample(sample: dict) -> dict:
@@ -160,7 +165,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def _work(job_id: str, job_dir: Path, opts: dict, progress) -> dict:
         from reforge.pipeline import photo_to_stl
         from reforge.reasoning.interpret import GeometricInterpreter, SparkInterpreter
-        from reforge.vision.segment import ClassicalSegmenter, SamSegmenter
+        from reforge.reasoning.reconstruct import Guidance
+        from reforge.vision.segment import ClassicalSegmenter, SamSegmenter, Segmentation
 
         try:
             client = None
@@ -174,10 +180,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else:
                 seg = ClassicalSegmenter()
             reader = SparkInterpreter(client, job_id=job_id) if use_spark else GeometricInterpreter()
+            guidance = None
+            guide_fields = ("guide_axis", "guide_fracture", "guide_exclude", "guide_damage", "guide_sources",
+                                  "guide_family_override", "guide_assert_angle", "guide_assert_x_mm",
+                                  "guide_assert_y_mm")
+            if any(opts[f] for f in guide_fields):
+                picked = tuple(s for s in opts["guide_sources"].replace(",", " ").split() if s)
+                px, py = opts["guide_assert_x_mm"], opts["guide_assert_y_mm"]
+                if (px is None) != (py is None):
+                    raise ReforgeError("GUIDE_BAD_POINT", "The axis pivot needs both x and y.",
+                                       "Send guide_assert_x_mm and guide_assert_y_mm together, in millimetres.")
+                guidance = Guidance(axis_id=opts["guide_axis"] or None,
+                                    assert_angle_deg=opts["guide_assert_angle"],
+                                    assert_point_mm=None if px is None else (px, py),
+                                    fracture_ids=tuple(s for s in opts["guide_fracture"].replace(",", " ").split()
+                                                       if s),
+                                    exclude_ids=tuple(s for s in opts["guide_exclude"].replace(",", " ").split()
+                                                      if s),
+                                    damage_hole_ids=tuple(s for s in opts["guide_damage"].replace(",", " ").split()
+                                                          if s),
+                                    source_hole_ids=picked or None,
+                                    family_override=opts["guide_family_override"], note=opts["guide_note"])
+            reuse, mask_png = None, (jobs_dir / str(opts["from_job"]) / "mask.png"
+                                     if opts["from_job"] and guidance is not None else None)
+            sample_mask: Path | None = None
+            if mask_png is None and opts["sample"] in samples and guidance is not None:
+                entry = samples[opts["sample"]]
+                if entry.get("mask"):
+                    sample_mask = SAMPLES_DIR / entry["mask"]
+            if sample_mask is not None and sample_mask.is_file():  # a guided example: its stored segmentation
+                entry = samples[opts["sample"]]
+                reuse = Segmentation(mask=cv2.imread(str(sample_mask), cv2.IMREAD_GRAYSCALE) > 127,
+                                     method="sample-mask", is_ai=bool(entry.get("mask_ai")),
+                                     detail={"reused_from": f"sample:{opts['sample']}"})
+            elif mask_png is not None and mask_png.is_file():
+                source_report = jobs_dir / str(opts["from_job"]) / "report.json"
+                source_request = jobs_dir / str(opts["from_job"]) / "request.json"
+                method, is_ai = "reused", False
+                if source_report.is_file():
+                    old = json.loads(source_report.read_text()).get("segmentation", {})
+                    method, is_ai = f"reused-{old.get('method', '?')}", bool(old.get("is_ai"))
+                elif source_request.is_file():  # failed jobs have no report: the request names the segmenter
+                    sam = json.loads(source_request.read_text()).get("segmenter") == "sam"
+                    method, is_ai = f"reused-{'sam-3.1' if sam else 'classical-fallback'}", sam
+                reuse = Segmentation(mask=cv2.imread(str(mask_png), cv2.IMREAD_GRAYSCALE) > 127, method=method,
+                                     is_ai=is_ai, detail={"reused_from": opts["from_job"]})
             return await photo_to_stl(job_dir / "input.png", job_dir, opts["thickness_mm"], seg,
                                       bar_x_mm=opts["bar_x_mm"], bar_y_mm=opts["bar_y_mm"], job_id=job_id,
                                       focal_35mm=opts["focal_35mm"], interpreter=reader, progress=progress,
-                                      known_length_mm=opts["known_length_mm"])
+                                      known_length_mm=opts["known_length_mm"], guidance=guidance,
+                                      reuse_segmentation=reuse, ruler_px_per_mm=opts["deskew_px_per_mm"])
         except ReforgeError as exc:
             exc.job_id = job_id
             (job_dir / "error.json").write_text(json.dumps({"job_id": job_id, **exc.to_dict()}, indent=2))
@@ -196,6 +248,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bar_x_mm: Annotated[float | None, Form()] = None,  # range-checked by the calibration, with a typed hint
         bar_y_mm: Annotated[float | None, Form()] = None,
         known_length_mm: Annotated[float | None, Form(gt=0, le=5000)] = None,  # ruler mode: no mat, longest side
+        deskew_px_per_mm: Annotated[float | None, Form(gt=0)] = None,  # Studio: exact scale of a deskewed photo
+        guide_axis: Annotated[str | None, Form(max_length=8)] = None,  # Studio: candidate axis id (A0…), or "none"
+        guide_fracture: Annotated[str, Form(max_length=200)] = "",  # Studio: segment ids, comma/space separated
+        guide_exclude: Annotated[str, Form(max_length=200)] = "",  # Studio: designed-asymmetry spans, same format
+        guide_damage: Annotated[str, Form(max_length=200)] = "",  # Studio: hole ids marked as damage, same format
+        guide_sources: Annotated[str, Form(max_length=500)] = "",  # Studio: hole ids to mirror from (empty = auto)
+        guide_assert_angle: Annotated[float | None, Form(ge=0, lt=180)] = None,  # Studio: asserted axis U0, degrees
+        guide_assert_x_mm: Annotated[float | None, Form()] = None,  # Studio: U0 pivot x, mm (needs y too)
+        guide_assert_y_mm: Annotated[float | None, Form()] = None,  # Studio: U0 pivot y, mm
+        guide_family_override: Annotated[bool, Form()] = False,  # Studio: assert a flat model of a non-flat reading
+        guide_note: Annotated[str, Form(max_length=280)] = "",
         segmenter: Annotated[str, Form(pattern="^(sam|classical)$")] = "sam",
         prompt: Annotated[str, Form(max_length=60)] = "plastic part",
         interpreter: Annotated[str | None, Form(pattern="^(spark|geometric)$")] = None,
@@ -238,7 +301,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         use_spark = (interpreter or ("spark" if segmenter == "sam" else "geometric")) == "spark"
         opts = {"thickness_mm": thickness_mm, "bar_x_mm": bar_x_mm, "bar_y_mm": bar_y_mm, "segmenter": segmenter,
                 "prompt": prompt.strip() or "plastic part", "interpreter": "spark" if use_spark else "geometric",
-                "focal_35mm": focal_35mm, "known_length_mm": known_length_mm}
+                "focal_35mm": focal_35mm, "known_length_mm": known_length_mm,
+                "deskew_px_per_mm": deskew_px_per_mm, "from_job": from_job, "sample": sample,
+                "guide_axis": (guide_axis or "").strip() or None, "guide_fracture": guide_fracture,
+                "guide_exclude": guide_exclude, "guide_damage": guide_damage, "guide_sources": guide_sources,
+                "guide_assert_angle": guide_assert_angle, "guide_assert_x_mm": guide_assert_x_mm,
+                "guide_assert_y_mm": guide_assert_y_mm,
+                "guide_family_override": guide_family_override, "guide_note": guide_note.strip()}
+        if sample and sample in samples:  # a guided example carries its Studio session; explicit fields win
+            guided = samples[sample].get("guidance") or {}
+            if opts["known_length_mm"] is None and samples[sample].get("known_length_mm") is not None:
+                opts["known_length_mm"] = samples[sample]["known_length_mm"]
+            point = guided.get("assert_point") or [None, None]
+            fill = {"guide_axis": guided.get("axis"), "guide_fracture": " ".join(guided.get("fracture") or []),
+                    "guide_exclude": " ".join(guided.get("exclude") or []),
+                    "guide_damage": " ".join(guided.get("damage") or []),
+                    "guide_sources": " ".join(guided.get("sources") or []),
+                    "guide_assert_angle": guided.get("assert_angle"), "guide_assert_x_mm": point[0],
+                    "guide_assert_y_mm": point[1], "guide_family_override": guided.get("family_override", False),
+                    "guide_note": guided.get("note", "")}
+            for key, value in fill.items():
+                if not opts[key]:
+                    opts[key] = value
         request_record = {"job_id": job_id, "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
                           "image_size": size, "sample": sample, "from_job": from_job, **opts}
         (job_dir / "request.json").write_text(json.dumps(request_record, indent=2))
@@ -256,8 +340,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not path.is_file():
             return {}
         req = json.loads(path.read_text())
-        keep = ("created_at", "image_size", "sample", "from_job", "thickness_mm", "bar_x_mm", "bar_y_mm", "segmenter",
-                "prompt", "interpreter", "focal_35mm", "known_length_mm")
+        keep = ("created_at", "image_size", "sample", "from_job", "reshaped_from", "thickness_mm", "bar_x_mm",
+                "bar_y_mm", "segmenter", "prompt", "interpreter", "focal_35mm", "known_length_mm",
+                "deskew_px_per_mm", "guide_axis", "guide_fracture", "guide_damage", "guide_sources",
+                "guide_assert_angle", "guide_assert_x_mm", "guide_assert_y_mm", "guide_family_override",
+                "guide_note")
         summary = {k: req.get(k) for k in keep}
         if req.get("sample") in samples:
             summary["sample_info"] = _public_sample(samples[req["sample"]])
@@ -287,12 +374,208 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 error = {"code": "INTERNAL_ERROR", "message": "The analysis stopped on an unexpected error.",
                          "hint": "Try again; if it happens again, report the job id."}
             body.update(state="failed", error={k: error.get(k) for k in ("code", "message", "hint")},
-                        stages=job.stage_list() if job else [], elapsed_s=job.elapsed_s if job else None)
+                        stages=job.stage_list() if job else [], elapsed_s=job.elapsed_s if job else None,
+                        files={k: v for k, v in _files(job_id).items()
+                               if (job_dir / k).is_file()})  # what exists: input, mask, setofmark…
         else:
             body.update(state="interrupted", stages=[], elapsed_s=None, error={
                 "code": "JOB_INTERRUPTED", "message": "This analysis was stopped before it finished (the server "
                 "restarted).", "hint": "Run it again."})
+        partial = job_dir / "reconstruction.json"
+        if partial.is_file():  # the Studio's candidates survive success and refusals alike
+            body["reconstruction"] = json.loads(partial.read_text())
+        feedback_path = job_dir / "feedback.json"
+        if feedback_path.is_file():
+            body["feedback"] = json.loads(feedback_path.read_text())
         return body
+
+    @app.post("/api/jobs/{job_id}/feedback")
+    async def post_feedback(job_id: str, verdict: Annotated[str, Form(pattern="^(ok|wrong)$")],
+                            note: Annotated[str, Form(max_length=500)] = "") -> dict:
+        """The human-in-the-loop record: was this result right? Stored on the job, shown with it, and reviewed to
+        steer the pipeline (which refusals and rebuilds to trust next)."""
+        if not JOB_ID.fullmatch(job_id):
+            raise HTTPException(404)
+        job_dir = jobs_dir / job_id
+        if not job_dir.is_dir():
+            raise HTTPException(404)
+        path = job_dir / "feedback.json"
+        entries = json.loads(path.read_text()) if path.is_file() else []
+        entries.append({"created_at": datetime.now(UTC).isoformat(timespec="seconds"), "verdict": verdict,
+                        "note": note.strip()})
+        path.write_text(json.dumps(entries, indent=2))
+        return {"ok": True, "count": len(entries)}
+
+    @app.post("/api/jobs/{job_id}/reshape", status_code=202)
+    async def post_reshape(job_id: str, body: dict) -> dict:
+        """The Studio's outline editor: rebuild from a hand-redrawn boundary.
+
+        The editor shows the built outline over ``photo.jpg``; the user drags it and the photo comes back here as
+        ``outline_px`` (photo pixels, implicitly closed). The pipeline re-runs on the parent's photo, mask and
+        calibration with the redrawn boundary, re-judging everything; the report records the edit. Fracture and
+        exclusion spans are re-picked by geometry (the redraw renumbers them), the asserted angle/pivot and the
+        hole lists carry over (same frame, same holes), and only the candidate axis id is dropped as stale."""
+        from reforge.pipeline import photo_to_stl
+        from reforge.reasoning.interpret import GeometricInterpreter, SparkInterpreter
+        from reforge.reasoning.reconstruct import Guidance
+        from reforge.studio.reshape import carry_span_picks, parent_segmentation, photo_px_to_view_mm, validate_outline
+        from reforge.vision.segment import Segmentation
+
+        if not JOB_ID.fullmatch(job_id):
+            raise HTTPException(404)
+        parent = jobs_dir / job_id
+        parent_report = parent / "report.json"
+        if not parent_report.is_file():
+            raise ReforgeError("JOB_NOT_FOUND", f"No finished analysis {job_id} to reshape.",
+                               "Reshape from a finished analysis.")
+        frame_path = parent / "frame.json"
+        if not frame_path.is_file():
+            raise ReforgeError("RESHAPE_NO_FRAME", "This analysis predates the outline editor (no photo frame).",
+                               "Run the photo once more, then reshape the new analysis.")
+        for name in ("input.png", "request.json", "mask.png"):
+            if not (parent / name).is_file():
+                raise ReforgeError("JOB_NOT_FOUND", f"The analysis {job_id} is missing its {name}.",
+                                   "Run the photo once more, then reshape the new analysis.")
+        try:
+            outline_px = np.asarray(body.get("outline_px"), dtype=float).reshape(-1, 2)
+            baseline_px = np.asarray(body.get("baseline_px", outline_px), dtype=float).reshape(-1, 2)
+        except (ValueError, TypeError) as err:
+            raise ReforgeError("RESHAPE_INVALID", "Can't read the redrawn outline.",
+                               "Send outline_px as [[x, y], …] in photo pixels.") from err
+        wait = bool(body.get("wait", False))
+        frame = json.loads(frame_path.read_text())
+        photo_w, photo_h = (int(v) for v in frame["photo_size_px"])
+        if bool((outline_px[:, 0] < 0).any() or (outline_px[:, 0] > photo_w).any()
+                or (outline_px[:, 1] < 0).any() or (outline_px[:, 1] > photo_h).any()):
+            raise ReforgeError("RESHAPE_INVALID", "The redrawn outline leaves the photo.",
+                               "Keep the outline inside the photo you were shown.")
+        report = json.loads(parent_report.read_text())
+        cal = report["calibration"]
+        view_mm = photo_px_to_view_mm(outline_px, frame, cal["px_per_mm_exact"], tuple(cal["origin_mm"]))
+        base_mm = photo_px_to_view_mm(baseline_px, frame, cal["px_per_mm_exact"], tuple(cal["origin_mm"]))
+        edit_moves = np.hypot(*(view_mm - base_mm).T) if len(base_mm) == len(view_mm) else np.zeros(0)
+        parent_spec = json.loads((parent / "spec.json").read_text())
+        parent_area = float(Polygon([tuple(p) for p in parent_spec["outline"]["points"]]).area)
+        validate_outline(view_mm, parent_area)
+        parent_req = json.loads((parent / "request.json").read_text())
+        carried = {k: parent_req.get(k) for k in
+                   ("guide_assert_angle", "guide_assert_x_mm", "guide_assert_y_mm", "guide_damage",
+                    "guide_sources", "guide_family_override")}
+        dropped = {"guide_axis": parent_req.get("guide_axis")} if parent_req.get("guide_axis") else {}
+        note_bits = [f"Reshaped in the Studio from {job_id}"]
+        if parent_req.get("guide_note"):
+            note_bits.append(str(parent_req["guide_note"])[:200])
+        if dropped:
+            note_bits.append(f"dropped stale picks: {', '.join(sorted(dropped))}")
+        parent_mask = cv2.imread(str(parent / "mask.png"), cv2.IMREAD_GRAYSCALE) > 127
+        parent_seg = await asyncio.to_thread(parent_segmentation, parent / "input.png", parent_mask, parent_req)
+        carried_fracture = carry_span_picks(
+            tuple(str(parent_req.get("guide_fracture") or "").replace(",", " ").split()), parent_seg, view_mm)
+        carried_exclude = carry_span_picks(
+            tuple(str(parent_req.get("guide_exclude") or "").replace(",", " ").split()), parent_seg, view_mm)
+        if parent_req.get("guide_fracture") and not carried_fracture:
+            note_bits.append("the redraw moved the picked break away; no fracture carried")
+        if parent_req.get("guide_exclude") and not carried_exclude:
+            note_bits.append("the redraw moved the kept spans away; no exclusions carried")
+        guidance = Guidance(assert_angle_deg=carried["guide_assert_angle"],
+                            assert_point_mm=(None if carried["guide_assert_x_mm"] is None else
+                                             (carried["guide_assert_x_mm"], carried["guide_assert_y_mm"])),
+                            fracture_ids=carried_fracture, exclude_ids=carried_exclude,
+                            damage_hole_ids=tuple(str(carried["guide_damage"] or "").replace(",", " ").split()),
+                            source_hole_ids=(tuple(str(carried["guide_sources"]).replace(",", " ").split())
+                                             if carried["guide_sources"] else None),
+                            family_override=bool(carried["guide_family_override"]), note="; ".join(note_bits))
+        registry.check_capacity()
+        child_id = uuid.uuid4().hex[:12]
+        child_dir = jobs_dir / child_id
+        child_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(parent / "input.png", child_dir / "input.png")
+        child_req = {k: parent_req.get(k) for k in
+                     ("thickness_mm", "bar_x_mm", "bar_y_mm", "segmenter", "prompt", "interpreter",
+                      "focal_35mm", "known_length_mm", "deskew_px_per_mm")}
+        child_req.update({"job_id": child_id, "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                          "reshaped_from": job_id, "guide_assert_angle": carried["guide_assert_angle"],
+                          "guide_assert_x_mm": carried["guide_assert_x_mm"],
+                          "guide_assert_y_mm": carried["guide_assert_y_mm"],
+                          "guide_fracture": " ".join(carried_fracture),
+                          "guide_exclude": " ".join(carried_exclude),
+                          "guide_damage": carried["guide_damage"], "guide_sources": carried["guide_sources"],
+                          "guide_family_override": carried["guide_family_override"],
+                          "guide_note": "; ".join(note_bits)})
+        (child_dir / "request.json").write_text(json.dumps(child_req, indent=2))
+        old_seg = report.get("segmentation", {})
+        reuse = Segmentation(mask=cv2.imread(str(parent / "mask.png"), cv2.IMREAD_GRAYSCALE) > 127,
+                             method=f"reused-{old_seg.get('method', '?')}", is_ai=bool(old_seg.get("is_ai")),
+                             detail={"reused_from": job_id})
+        reshape_info: dict = {"from_job": job_id, "guidance_carried": {k: v for k, v in carried.items() if v},
+                              "fracture_carried": list(carried_fracture),
+                              "fracture_from": str(parent_req.get("guide_fracture") or ""),
+                              "exclude_carried": list(carried_exclude),
+                              "guidance_dropped": dropped,
+                              "edited_points": int((edit_moves > 0.05).sum()),
+                              "edit_max_mm": round(float(edit_moves.max()) if len(edit_moves) else 0.0, 2),
+                              "edit_mean_mm": round(float(edit_moves.mean()) if len(edit_moves) else 0.0, 2)}
+
+        async def _reshape_work(progress) -> dict:
+            from reforge.meta_api.client import MetaClient
+            from reforge.vision.segment import ClassicalSegmenter
+
+            try:
+                client = None
+                use_spark = child_req["interpreter"] == "spark"
+                if use_spark:
+                    client = MetaClient(settings)
+                reader = SparkInterpreter(client, job_id=child_id) if use_spark else GeometricInterpreter()
+                return await photo_to_stl(
+                    child_dir / "input.png", child_dir, child_req["thickness_mm"], ClassicalSegmenter(),
+                    bar_x_mm=child_req["bar_x_mm"], bar_y_mm=child_req["bar_y_mm"], job_id=child_id,
+                    focal_35mm=child_req["focal_35mm"], interpreter=reader, progress=progress,
+                    known_length_mm=child_req["known_length_mm"], guidance=guidance,
+                    reuse_segmentation=reuse, ruler_px_per_mm=child_req["deskew_px_per_mm"],
+                    outer_override_mm=view_mm, reshape_info=reshape_info)
+            except ReforgeError as exc:
+                exc.job_id = child_id
+                (child_dir / "error.json").write_text(json.dumps({"job_id": child_id, **exc.to_dict()}, indent=2))
+                raise
+            except Exception as exc:
+                (child_dir / "error.json").write_text(json.dumps(
+                    {"job_id": child_id, "code": "INTERNAL_ERROR", "message": type(exc).__name__, "hint": None},
+                    indent=2))
+                raise
+
+        job = registry.submit(child_id, _reshape_work)
+        if not wait:
+            return JSONResponse({"job_id": child_id, "status_url": f"/api/jobs/{child_id}"}, status_code=202)
+        assert job.task is not None
+        result = await asyncio.shield(job.task)
+        if job.exception is not None:
+            raise job.exception
+        return JSONResponse({"job_id": child_id, "report": result, "files": _files(child_id)}, status_code=200)
+
+    @app.post("/api/deskew")
+    async def post_deskew(photo: Annotated[UploadFile, File()],
+                          corners: Annotated[str, Form(max_length=400)],
+                          length_mm: Annotated[float, Form(gt=0, le=5000)],
+                          width_mm: Annotated[float, Form(gt=0, le=5000)]) -> dict:
+        """The Studio's "flatten" step: a perspective photo of a rectangular part back to top-down, at the entered
+        L×W. Returns the rectified PNG (base64) with its exact scale; the Studio shows it for approval, then runs
+        a normal ruler-mode job from it with the long side as the length."""
+        from reforge.studio.deskew import deskew_quad
+
+        data = await photo.read(MAX_UPLOAD_BYTES + 1)
+        image = _decode_upload(data)
+        try:
+            pts = np.asarray(json.loads(corners), dtype=float)
+        except (ValueError, TypeError) as err:
+            raise ReforgeError("DESKEW_BAD_CORNERS", f"Can't read the corners ({corners[:60]}…).",
+                               "Send the four corners as [[x, y], …] in pixels.") from err
+        result = deskew_quad(image, pts, length_mm, width_mm)
+        ok, png = cv2.imencode(".png", result.image_bgr)
+        assert ok
+        long_mm, short_mm = max(length_mm, width_mm), min(length_mm, width_mm)
+        return {"png_b64": base64.b64encode(png.tobytes()).decode(), "px_per_mm": result.px_per_mm,
+                "length_mm": long_mm, "width_mm": short_mm, "margin_px": list(result.margin_px),
+                "corners_used": [list(c) for c in result.corners_px]}
 
     def _compensated(job_dir: Path, name: str, hole_offset_mm: float, outline_offset_mm: float) -> tuple[bytes, str]:
         """Rebuild the job's validated PartSpec with a printer compensation: same evidence, offset holes/outline."""

@@ -332,6 +332,8 @@ The strict structured-output subset for Muse Spark:
 
 **MVP (M1 + M2):**
 - Calibration and capture-quality checks (mat, plus 🟡 ruler mode without the mat since 2026-11-04)
+- ✅ Studio human-in-the-loop (2026-11-04): the user picks axis/fracture/damage/sources on the set-of-mark, asserts an angle + pivot, deskews a quad, overrides the family explicitly; geometry still judges every choice. Feedback 👍/👎 on every job. First win: the guided steel-wheel vent rebuild, bundled as a sample.
+- ✅ Studio outline editor (2026-11-04): the user drags the built border itself (SVG handles, undo/redo/reset, Ctrl+Z/Y), then `POST /api/jobs/{id}/reshape` rebuilds from the redrawn edge on the same photo/mask/calibration; fracture + exclusion spans are re-picked by geometry (ids don't survive a redraw), the report records the measured drag (`reshaped` + `OUTLINE_RESHAPED`), and the overlay/texture keep the photographed outline for the photo-vs-rebuilt split. 20 samples (7 user tmp = 35 %). Suite 196 passed.
 - SAM 3.1 segmentation with click refinement
 - Sub-pixel boundary refinement and holes
 - Spark interpretation

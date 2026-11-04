@@ -2,7 +2,8 @@
 
 Only the mirror image's extra material that touches an accepted fracture is added. Elsewhere, a difference between a
 side and its mirror is real asymmetry (a designed notch, say): it's reported, not filled. A mirrored hole is added
-only if it lands entirely inside added material, with no observed hole already there.
+only if it lands entirely inside added material, with no observed hole already there — or, user-guided, inside a
+user-marked damage hole (interior damage with an intact outline: the Studio case).
 
 Provenance, point by point along the completed outline: on the photographed outline → OBSERVED; on the mirrored
 outline inside added material → INFERRED (mirror of the named segments about the named axis); a photographed
@@ -43,6 +44,7 @@ class Region:
     area_mm2: float
     filled: bool
     reason: str
+    echo: bool = False  # touches the fracture's mirror: damage echo, neither filled nor counted as asymmetry
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,7 @@ class InferredHole:
     source_hole_id: str
     center: tuple[float, float]
     radius: float
+    points: tuple[tuple[float, float], ...] | None = None  # mirrored ring (mat frame) for a traced source
 
 
 @dataclass(frozen=True)
@@ -119,12 +122,33 @@ def _segment_names(ids: list[str]) -> str:
 
 
 def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[float, float], float]],
-                       axis: MirrorAxis, fracture_ids: list[str], segmented: SegmentedOutline) -> Completion:
-    """``outline_mm`` is the footprint that ``segmented`` was built from; ``fracture_ids`` are accepted segments."""
+                       axis: MirrorAxis, fracture_ids: list[str], segmented: SegmentedOutline, *,
+                       damage: tuple = (), traced: tuple = (), observed_holes: list | None = None,
+                       observed_traced: tuple | None = None,
+                       exclude_ids: list[str] | None = None) -> Completion:
+    """``outline_mm`` is the footprint that ``segmented`` was built from; ``fracture_ids`` are accepted segments.
+
+    ``damage`` are (N, 2) rings of user-marked damage holes and ``traced`` are (id, ring) of observed non-fitted
+    holes: a surviving hole whose mirror lands inside damage, with no observed hole already there, is inferred
+    (a disc for a fitted source, the mirrored ring for a traced one). With explicit Studio sources, ``holes`` and
+    ``traced`` are the build list while ``observed_holes``/``observed_traced`` are everything seen: partners are
+    looked up among everything seen, so a source whose partner the user left out is confirmed, not duplicated.
+    ``exclude_ids`` are user-marked designed asymmetry (kept as photographed): components touching their mirror are
+    reported as echo, never filled, never counted."""
     observed = Polygon(outline_mm).buffer(0)
     mirror = Polygon(axis.reflect(outline_mm)).buffer(0)
     spans = [segmented.span(segmented.by_id(sid)) for sid in fracture_ids]
     fracture = MultiLineString([LineString(sp) for sp in spans if len(sp) >= 2]) if spans else None
+    echo_lines = []  # the fracture's mirror: outward-splayed fragments echo there; damage, not the part's own shape
+    if fracture is not None:
+        echo_lines += [axis.reflect(np.asarray(sp)) for sp in spans if len(sp) >= 2]
+    excluded = sorted(set(exclude_ids or ()), key=lambda sid: int(sid[1:]))
+    exclude_mirror = None
+    if excluded:  # user-marked designed asymmetry: kept as photographed, its mirror never counts either way
+        mirrored = [axis.reflect(np.asarray(segmented.span(segmented.by_id(sid)))) for sid in excluded]
+        exclude_mirror = MultiLineString([LineString(sp) for sp in mirrored if len(sp) >= 2])
+        echo_lines += mirrored
+    echo = MultiLineString([LineString(sp) for sp in echo_lines if len(sp) >= 2]) if echo_lines else None
     extra = mirror.difference(observed).buffer(-OPENING_MM, join_style="mitre").buffer(OPENING_MM, join_style="mitre")
     fracture_ids = sorted(fracture_ids, key=lambda sid: int(sid[1:]))
     regions = []
@@ -132,9 +156,19 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
         if comp.area < MIN_COMPONENT_MM2:
             continue
         touches = fracture is not None and comp.distance(fracture) <= TAU_MM
-        reason = (f"mirror of the intact side, next to the fracture ({_segment_names(fracture_ids)})" if touches
-                  else "real asymmetry (not next to a fracture): reported, not filled")
-        regions.append(Region(comp, float(comp.area), touches, reason))
+        is_echo = not touches and echo is not None and comp.distance(echo) <= TAU_MM
+        if touches:
+            reason = f"mirror of the intact side, next to the fracture ({_segment_names(fracture_ids)})"
+        elif is_echo:
+            if exclude_mirror is not None and comp.distance(exclude_mirror) <= TAU_MM:
+                reason = (f"user-excluded asymmetry ({_segment_names(excluded)}): kept as photographed, mirror "
+                          "not counted")
+            else:
+                reason = (f"damage echo (mirror of the fracture {_segment_names(fracture_ids)}): reported, "
+                          "neither filled nor counted")
+        else:
+            reason = "real asymmetry (not next to a fracture): reported, not filled"
+        regions.append(Region(comp, float(comp.area), touches, reason, echo=is_echo))
 
     filled = [r.polygon for r in regions if r.filled]
     merged = unary_union([observed, *filled]).buffer(CLOSING_MM, join_style="mitre").buffer(-CLOSING_MM,
@@ -188,16 +222,50 @@ def complete_by_mirror(outline_mm: np.ndarray, holes: list[tuple[str, tuple[floa
     runs = _runs(keys, axis)
 
     hole_checks, inferred, asymmetric = [], [], []
+    damage_polys = []
+    for d in damage:
+        poly = Polygon(np.asarray(d, dtype=np.float64)).buffer(0)
+        shapely.prepare(poly)
+        damage_polys.append(poly)
+    traced_polys = []
+    for tid, ring in traced:
+        poly = Polygon(np.asarray(ring, dtype=np.float64)).buffer(0)
+        shapely.prepare(poly)
+        traced_polys.append((tid, poly))
+    occ_traced = []
+    for tid, ring in observed_traced if observed_traced is not None else traced:
+        poly = Polygon(np.asarray(ring, dtype=np.float64)).buffer(0)
+        shapely.prepare(poly)
+        occ_traced.append((tid, poly))
+    occ_holes = observed_holes if observed_holes is not None else holes
+
+    def _in_damage(poly) -> bool:
+        return bool(damage_polys) and any(
+            d.intersection(poly).area > 0.95 * poly.area for d in damage_polys)
+
+    def _occupied(poly) -> bool:
+        c = (poly.centroid.x, poly.centroid.y)
+        if any(np.hypot(h[1][0] - c[0], h[1][1] - c[1]) <= max(TAU_MM, 0.25 * h[2]) for h in occ_holes):
+            return True
+        return any(t.intersection(poly).area > 0.1 * poly.area for _, t in occ_traced)
+
     for hid, centre, radius in holes:
         image = axis.reflect(np.asarray(centre))[0]
-        partner = min(holes, key=lambda h: float(np.hypot(h[1][0] - image[0], h[1][1] - image[1])))
+        partner = min(occ_holes, key=lambda h: float(np.hypot(h[1][0] - image[0], h[1][1] - image[1])))
         distance = float(np.hypot(partner[1][0] - image[0], partner[1][1] - image[1]))
+        disc = Point(image).buffer(float(radius), resolution=24)
         if distance <= max(TAU_MM, 0.25 * radius):
             hole_checks.append(HoleCheck(hid, partner[0], distance, 2 * abs(partner[2] - radius)))
-        elif _lands_in_rebuild(Point(image).buffer(radius), filled, merged):
+        elif ((_lands_in_rebuild(disc, filled, merged) or _in_damage(disc)) and not _occupied(disc)):
             inferred.append(InferredHole(hid, (float(image[0]), float(image[1])), float(radius)))
         elif observed.contains(Point(image)):
             asymmetric.append(hid)
+    for tid, tpoly in traced_polys:
+        image = Polygon(axis.reflect(np.asarray(tpoly.exterior.coords))).buffer(0)
+        if _in_damage(image) and not _occupied(image):
+            c = image.centroid
+            inferred.append(InferredHole(tid, (float(c.x), float(c.y)), float(np.sqrt(image.area / np.pi)),
+                                         points=tuple((float(x), float(y)) for x, y in image.exterior.coords)))
     radius = {hid: r for hid, _, r in holes}
     confirmed = axis.matched_mm + sum(2 * np.pi * radius[h.hole_id] for h in hole_checks)
     return Completion(axis, pts, runs, tuple(regions), tuple(inferred), tuple(hole_checks), tuple(asymmetric),

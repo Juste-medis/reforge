@@ -31,7 +31,8 @@ function SampleCard({ sample, health }: { sample: Sample; health: Health | null 
         <h3>{sample.title}</h3>
         <p>{sample.story}</p>
         <p className="sample-truth">
-          True size, known exactly: <strong>{t.length_mm.toFixed(2)} × {t.width_mm.toFixed(2)} mm</strong>
+          True size{t.exact === false ? ", same ruler assumption as the photo" : ", known exactly"}:{" "}
+          <strong>{t.length_mm.toFixed(2)} × {t.width_mm.toFixed(2)} mm</strong>
         </p>
         {sample.credit && <Credit credit={sample.credit} />}
         {sample.provided_by === "user" && <p className="credit">Photo supplied by the user for the examples</p>}

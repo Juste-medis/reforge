@@ -67,6 +67,7 @@ export interface PartAnalysis {
 export interface Axis {
   id: string;
   angle_deg: number;
+  point_mm?: [number, number];
   support: number;
   holes_matched: number;
   holes_contradicting: number;
@@ -81,7 +82,7 @@ export interface Completion {
   inferred_outline_mm: number;
   confirmed_mm: number;
   extent_mm: [number, number];
-  regions: { area_mm2: number; filled: boolean; reason: string }[];
+  regions: { area_mm2: number; filled: boolean; echo: boolean; reason: string }[];
   inferred_holes: { from: string; center_mm: [number, number]; diameter_mm: number }[];
   runs: { status: string; source: string; length_mm: number }[];
 }
@@ -217,6 +218,21 @@ export interface Report {
   timings_s: Record<string, number>;
   outputs: string[];
   disclaimer: string;
+  reshaped?: {
+    from_job: string;
+    guidance_carried: Record<string, unknown>;
+    fracture_carried: string[];
+    fracture_from: string;
+    exclude_carried: string[];
+    guidance_dropped: Record<string, unknown>;
+    edited_points: number;
+    edit_max_mm: number;
+    edit_mean_mm: number;
+    moved_points: number;
+    max_move_mm: number;
+    mean_move_mm: number;
+    holes_dropped: string[];
+  } | null;
 }
 
 export type Files = Record<string, string>;
@@ -234,8 +250,9 @@ export interface Sample {
   title: string;
   story: string;
   thickness_mm: number;
-  kind: "synthetic";
-  /** A rendered part with no source photo; otherwise a real photo of a real part, composited onto the mat. */
+  kind: "synthetic" | "photograph";
+  /** A rendered part with no source photo; otherwise a real photo of a real part, composited onto the mat —
+   * or "photograph" for a real photo with a stored Studio session (no mat, ruler-scaled). */
   rendered?: boolean;
   credit?: Credit;
   provided_by?: string;
@@ -244,6 +261,8 @@ export interface Sample {
   thumb_url: string;
   truth: {
     basis: string;
+    /** False when the truth shares a ruler assumption with the photo instead of being known exactly. */
+    exact?: boolean;
     length_mm: number;
     width_mm: number;
     holes: { diameter_mm?: number; slot_mm?: [number, number]; shape?: string; count: number }[];
@@ -269,6 +288,18 @@ export interface JobRequest {
   prompt?: string;
   interpreter?: "spark" | "geometric";
   focal_35mm?: number | null;
+  known_length_mm?: number | null;
+  deskew_px_per_mm?: number | null;
+  guide_axis?: string | null;
+  guide_fracture?: string | null;
+  guide_exclude?: string | null;
+  guide_damage?: string | null;
+  guide_sources?: string | null;
+  guide_assert_angle?: number | null;
+  guide_assert_x_mm?: number | null;
+  guide_assert_y_mm?: number | null;
+  guide_family_override?: boolean | null;
+  guide_note?: string | null;
   sample_info?: Sample;
 }
 
@@ -279,6 +310,26 @@ export interface ApiErrorBody {
   job_id?: string; // the job folder that kept the request and this error
 }
 
+export interface AllHole {
+  id: string;
+  kind: "circle" | "traced";
+  area_mm2: number;
+  centre_mm: [number, number];
+  doubted: boolean;
+}
+
+/** reconstruction.json: the Studio's candidates, on success and on refusals alike. */
+export interface ReconstructionDoc extends Reconstruction {
+  refused: string | null;
+  all_holes: AllHole[];
+}
+
+export interface FeedbackEntry {
+  created_at: string;
+  verdict: "ok" | "wrong";
+  note: string;
+}
+
 export interface JobStatus {
   job_id: string;
   state: "queued" | "running" | "done" | "failed" | "interrupted";
@@ -286,6 +337,9 @@ export interface JobStatus {
   stages: StageState[];
   elapsed_s: number | null;
   result?: { report: Report; files: Files };
+  files?: Files;
+  reconstruction?: ReconstructionDoc;
+  feedback?: FeedbackEntry[];
   error?: ApiErrorBody;
 }
 
@@ -298,12 +352,38 @@ export interface Health {
   ai_budget?: { cap_usd: number; spent_today_usd: number };
 }
 
+export interface GuideOptions {
+  axis?: string;
+  fracture?: string[];
+  /** Designed-asymmetry spans: kept as photographed, their mirror never counts. */
+  exclude?: string[];
+  damage?: string[];
+  /** Exactly these holes get built; undefined (or empty) = automatic. */
+  sources?: string[];
+  assert_angle?: number;
+  assert_x_mm?: number;
+  assert_y_mm?: number;
+  family_override?: boolean;
+  note?: string;
+}
+
 export interface JobOptions {
   thickness_mm: number;
   bar_x_mm?: number;
   bar_y_mm?: number;
   known_length_mm?: number;
+  deskew_px_per_mm?: number;
   segmenter: "sam" | "classical";
   interpreter: "spark" | "geometric";
   prompt: string;
+  guide?: GuideOptions;
+}
+
+export interface DeskewResult {
+  png_b64: string;
+  px_per_mm: number;
+  length_mm: number;
+  width_mm: number;
+  margin_px: [number, number];
+  corners_used: [number, number][];
 }

@@ -6,12 +6,14 @@ import { Home } from "./pages/Home";
 import { JobPage } from "./pages/JobPage";
 import { NewRepair } from "./pages/NewRepair";
 import { Repairs } from "./pages/Repairs";
+import { Studio } from "./pages/Studio";
 import type { Health } from "./types";
 
 const TITLES: Record<string, string> = {
   home: "Re-Forge: rebuild the part that broke",
   new: "New repair · Re-Forge",
   repairs: "My repairs · Re-Forge",
+  studio: "Studio · Re-Forge",
   job: "Repair · Re-Forge",
 };
 
@@ -46,6 +48,7 @@ export default function App() {
         {route.name === "home" && <Home health={health} anchor={route.anchor} />}
         {route.name === "new" && <NewRepair health={health} />}
         {route.name === "repairs" && <Repairs />}
+        {route.name === "studio" && <Studio key={route.id ?? "flat"} id={route.id} health={health} />}
         {route.name === "job" && <JobPage key={route.id} id={route.id} health={health} />}
       </main>
       <Footer />

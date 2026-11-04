@@ -40,7 +40,7 @@ def _label(img: np.ndarray, text: str, anchor: np.ndarray, colour: tuple[int, in
 
 def render_set_of_mark(view: RectifiedView, segmented: SegmentedOutline, axes: list[MirrorAxis],
                        holes: list[tuple[str, tuple[float, float], float]], *, margin_mm: float = 12.0,
-                       width_px: int = 1600) -> tuple[np.ndarray, np.ndarray]:
+                       width_px: int = 1600, traced: tuple = ()) -> tuple[np.ndarray, np.ndarray]:
     """(context, marked close-up), both BGR. The context is the whole rectified view, so the model sees everything
     on the mat and can tell when the traced outline is only part of an object."""
     pts = segmented.points
@@ -88,6 +88,12 @@ def render_set_of_mark(view: RectifiedView, segmented: SegmentedOutline, axes: l
         r_px = radius * view.px_per_mm * scale
         cv2.circle(marked, tuple(np.round(c).astype(int)), int(round(r_px)), HOLE_COLOUR, 3, cv2.LINE_AA)
         labels.append((hole_id, c + np.array([0, -r_px - 22]), HOLE_COLOUR,
+                       np.array([0.0, -1.0]) if i % 2 == 0 else np.array([0.0, 1.0])))
+    for i, (hole_id, ring) in enumerate(traced):
+        ring_px = to_px(np.asarray(ring))
+        cv2.polylines(marked, [np.round(ring_px).astype(np.int32)], True, HOLE_COLOUR, 3, cv2.LINE_AA)
+        c = ring_px.mean(axis=0)
+        labels.append((hole_id, c + np.array([0.0, -22.0 if i % 2 == 0 else 22.0]), HOLE_COLOUR,
                        np.array([0.0, -1.0]) if i % 2 == 0 else np.array([0.0, 1.0])))
 
     for i, seg in enumerate(segmented.segments):

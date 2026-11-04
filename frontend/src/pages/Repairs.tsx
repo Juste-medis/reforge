@@ -40,7 +40,7 @@ export function Repairs() {
                 </span>
                 <span className="repair-body">
                   <strong>{e.title}</strong>
-                  <span className="muted small">{when(e.createdAt)}{e.sample ? " · synthetic example" : ""}</span>
+                  <span className="muted small">{when(e.createdAt)}{e.sample ? " · example" : ""}</span>
                   <span className="repair-meta">
                     <span className={`state state-${e.state ?? "running"}`}>{STATE_LABEL[e.state ?? "running"]}</span>
                     {e.size && <span>{e.size}</span>}
