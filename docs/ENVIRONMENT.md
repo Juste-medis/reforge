@@ -83,7 +83,7 @@ These were checked to exist via `docker manifest inspect`. They're pulled when f
 - **Inputs:** a synthetic test image only.
 - **What it checks:** key and model access; Spark structured output, and vision with enum/minimum keywords; SAM 3.1 with text and point prompts, including mask placement, hole preservation and IoU against the exact ground truth; and image token cost.
 - **Output:** writes `prep/out/verify_report_*.json`.
-- **Status:** `prep/` is git-ignored and isn't part of the submission. The offline parts were self-tested on 2026-10-23; the live run needs the key.
+- **Status:** `prep/` is git-ignored and isn't part of the repository. The offline parts were self-tested on 2026-10-23; the live run needs the key.
 
 ## Reproducibility plan (created at kickoff)
 

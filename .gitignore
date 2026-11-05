@@ -32,3 +32,9 @@ tmp/
 
 # demo video build folder (videos go to YouTube, not git)
 demo-video-v1/
+
+# internal planning and event notes (kept locally, not published)
+docs/PLAN.md
+docs/PROGRESS.md
+docs/SUBMISSION.md
+docs/DEMO_SCRIPT.md

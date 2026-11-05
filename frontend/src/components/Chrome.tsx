@@ -71,8 +71,7 @@ export function Footer() {
           A reconstruction is not a verified replacement part: check it before you rely on it, and never use it where a failure could hurt someone.
         </p>
         <p className="footer-meta">
-          Built for the Meta Global AI Developer Hackathon 2026 · Uses Meta SAM 3.1 and Muse Spark through the Meta Model API ·
-          Open source, Apache-2.0
+          Uses Meta SAM 3.1 and Muse Spark through the Meta Model API · Open source, Apache-2.0
         </p>
       </div>
     </footer>

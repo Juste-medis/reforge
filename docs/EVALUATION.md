@@ -1026,7 +1026,7 @@ The square gasket drew the honest boundary: traced (non-circular) holes don't pa
 circles only), so a break that takes one can't be completed — the diagonal axis itself was perfect (support 100 %,
 RMS 0.08 mm). And the passages blanket the part (≤2.4 mm clearance in every direction), so no surviving-all-holes
 chip rises above the photo grain live. Teaching the mirror to pair and infer traced-polygon holes is real future work
-(polygon `InferredHole` through completion, model builder and verification), deliberately not rushed on deadline day.
+(polygon `InferredHole` through completion, model builder and verification), deliberately not rushed.
 
 Suite: 172 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 28 (8/28 = 28.6 % user tmp). Live
 spend this addendum: about $0.12 (3 admissions + 2 square probes + 1 re-verify).
