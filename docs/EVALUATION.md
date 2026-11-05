@@ -1139,3 +1139,23 @@ bougie, wheel) with inputs, overlays, intact truths, measured numbers and `INSTR
 voiceover beats, honesty guardrails).
 
 Suite: 196 passed, 3 deselected; ruff clean; frontend builds; gallery shows all 20 (7/20 = 35 % user tmp).
+
+## 2026-11-05 (00:40 to 01:20 Paris) · demo video v7 runs · ✅ LIVE SAM 3.1 + Muse Spark 1.3 (standard tier)
+
+Local API (127.0.0.1:8011, Meta key configured), bundled samples, recorded on screen for the v7 demo video.
+
+| Sample | Job | Engine | Result | Truth |
+|---|---|---|---|---|
+| broken-sprocket | fcc980cacd5d | SAM 3.1 + Muse Spark 1.3 | 70.079 ± 0.392 × 68.253 ± 0.384 mm, bore Ø10.359 ± 0.129, 662.64 mm² rebuilt; $0.0248 (SAM $0.0025 in 3.7 s, Spark $0.0223 in 28.2 s), 45.6 s total | 70.23 × 68.31, Ø10.4 |
+| broken-flange | 5442a29f1f2f | SAM 3.1 + Muse Spark 1.3 | 56.008 × 56.004 mm, Ø23.996, Ø6.498/6.496 + 2 inferred, 653.75 mm²; $0.0195 | 56 × 56, Ø24, 4 × Ø6.5 |
+| broken-bracket | dc0f5b2d90cb | SAM 3.1 + Muse Spark 1.3 | 80.030 × 28.037 mm, Ø4.178/4.179, 107.34 mm²; $0.0192 | 80 × 28, 2 × Ø4.2 |
+| broken-pulley | d9b195017f40 | classical + geometric, sample guidance | 129.999 × 129.981 mm, 3832.18 mm², inferred Ø5.993/7.993/5.995 | 130 × 130, 4 × Ø8, 4 × Ø6 |
+| broken-volant | b4f2b3b9873f | classical + geometric, guidance | 347.680 × 345.412 mm, 2167.69 mm² | same-photo twin |
+| broken-wheel | 690914e138c0 | classical + geometric, guidance | 400.568 × 389.513 mm, 3 inferred vents | same-photo twin |
+| broken-bougie | f64f3746d771 | classical + geometric, guidance | 100.026 × 19.816 mm, 25.35 mm² | intact photo |
+| product shot, no mat | b9b5ca7153a8 | classical | refused: CAL_MARKERS_INSUFFICIENT | n/a |
+
+On the sprocket, Spark named "roller chain sprocket 21-tooth" and picked S17 to S36 (20 segments) as the fracture.
+Verification rejected 11 of them (FRACTURE_MATCHES_MIRROR: each matches its mirror image under A0), warned on 2
+(FRACTURE_SMOOTH), and passed S19 to S27 with axis A0 (CROSS_CHECK); the rebuild used only those. Both dimensions
+and the bore sit within their 2σ. Ledger after these runs: 446 records, $4.40 in total of the $150 credits.

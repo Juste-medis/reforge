@@ -1,5 +1,9 @@
 # Demo video: 3 minutes
 
+> **Recorded cut: v7 (2026-11-05), 2:50.** Narration in `demo-video-v1/script-v7.md`, runs in
+> `demo-video-v1/provenance-v7.md` and `docs/EVALUATION.md` (5 Nov entry). It replaces the plan below where they differ:
+> it opens on a live SAM 3.1 + Muse Spark run and shows the geometry rejecting 11 of Spark's 20 fracture picks.
+
 Judged on: Impact 30 % · Use of Meta AI tooling 25 % · Technical depth 20 % · Demo 25 %. The final-round judges watch
 the video live, so it has to stand on its own.
 

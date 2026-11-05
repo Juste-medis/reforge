@@ -67,7 +67,10 @@ https://github.com/Juste-medis/reforge (must be public before submitting).
 
 ## 3-Minute Demo Video*
 
-The YouTube link, once recorded. Plan: `docs/DEMO_SCRIPT.md`.
+The YouTube link. The video is `demo-video-v1/reforge-demo-v7.mp4` (2:50, 1080p30, -16 LUFS; kept out of git),
+with English captions `demo-video-v1/reforge-demo-v7.srt`. Title, description with chapters, tags and the pinned
+comment are in `tmp/youtube/`. It shows a live run with SAM 3.1 + Muse Spark 1.3 (job `fcc980cacd5d`, $0.025) and
+the geometry rejecting 11 of Spark's 20 fracture picks; every quoted number is in `docs/EVALUATION.md` (5 Nov entry).
 
 ## Describe your use of Meta products to build the submitted project*
 
@@ -89,8 +92,8 @@ The YouTube link, once recorded. Plan: `docs/DEMO_SCRIPT.md`.
 >   latency 15.0 s, about $0.015 per call; every answer parsed against the strict schema.
 >
 > Every call goes through one client with timeouts, retries, a daily budget guard and a usage ledger, so the app shows
-> each job's real AI cost: $0.019 to $0.028 per analysis on the examples. Total spend while building: $1.92 of the
-> $150 credits (ledger, 2026-10-28 to 2026-11-03). If the API is unreachable, the UI offers to run the same photo
+> each job's real AI cost: $0.019 to $0.028 per analysis on the examples. Total spend while building: $4.40 of the
+> $150 credits (ledger, 446 records, 2026-10-28 to 2026-11-05). If the API is unreachable, the UI offers to run the same photo
 > without AI, clearly labelled.
 
 ## Why are Meta's models important to your solution?*

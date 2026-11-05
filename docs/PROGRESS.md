@@ -784,3 +784,27 @@ via the peer channel, with the measurements below).
 
 **Next**
 - **The user:** commit/push, public repo, video (`docs/DEMO_SCRIPT.md` + showcase), form (`docs/SUBMISSION.md`) by Wed 4 Nov, 22:00 Paris.
+
+## 2026-11-05 (Thu, 00:40 to 01:30 Paris): Session 16, final checks and demo video v7
+
+Brief: final conformity check against the participant guide (`tmp/p6.txt`), a better demo video (locked voice,
+more real animation), YouTube texts. Decisions taken by the submitter at 00:50: Meta AI in the spotlight, 2:59 at
+most, keep the Brian voice.
+
+**Found**
+- ⛔ v6 video ran 3:31 (the guide asks for a three minute video) and said "no AI" throughout, which works against
+  Stage One (Meta models must be used) and the 25 % "Use of Meta AI Tooling" criterion.
+- ⛔ `main` on GitHub was still `c0425d2`; the final work is on `real-samples` (default branch is `main`).
+
+**Done**
+- ✅ Live runs with SAM 3.1 + Muse Spark 1.3 on the bundled samples (`docs/EVALUATION.md`, 5 Nov entry): the
+  sprocket rebuilt within 2σ, Spark's 20 fracture picks cut to 9 by geometry, $0.025 per analysis.
+- ✅ Demo video v7 (`demo-video-v1/reforge-demo-v7.mp4`, 2:50, kept out of git): every scene a fresh screen recording
+  of the app with a Meta key (genuine clicks, drags, scrolls, a live run as a labelled time-lapse), animated cards,
+  lower thirds, transitions; same locked voice recipe; captions `.srt`; `script-v7.md`, `provenance-v7.md`.
+- ✅ YouTube texts rewritten in `tmp/youtube/` (v6 copies kept as `v6-*`).
+- ✅ `docs/SUBMISSION.md`: video field and spend ($4.40 of $150) updated.
+
+**Next**
+- **The submitter:** push `main` (fast-forwarded to the final work), upload v7 to YouTube with the captions, paste the
+  link into the form, submit before 03:00 Paris.

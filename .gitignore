@@ -29,3 +29,6 @@ tmp/
 .DS_Store
 *.swp
 .idea/
+
+# demo video build folder (videos go to YouTube, not git)
+demo-video-v1/
