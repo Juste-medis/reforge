@@ -3,6 +3,7 @@
 import io
 import json
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import cv2
@@ -39,6 +40,12 @@ def _post(client: TestClient, data: bytes, name: str = "photo.png", **form) -> o
 def test_health_reports_key_presence_only(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["ok"] is True and body["meta_key_configured"] is False
+
+
+def test_health_reports_process_start_and_uptime(client: TestClient) -> None:
+    body = client.get("/api/health").json()
+    assert body["started_at"] <= datetime.now(UTC).isoformat(timespec="seconds")
+    assert body["uptime_s"] >= 0.0
 
 
 def test_job_round_trip(client: TestClient, photo_bytes: bytes, tmp_path: Path) -> None:

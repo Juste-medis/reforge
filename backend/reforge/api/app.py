@@ -42,6 +42,7 @@ from reforge.errors import ReforgeError
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_PIXELS = 40_000_000
+STARTED_AT = datetime.now(UTC)  # process start, reported by /api/health
 JOB_ID = re.compile(r"^[a-f0-9]{12}$")
 SAMPLE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 OUTPUTS = {
@@ -133,7 +134,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body = {"ok": True, "meta_key_configured": _ai_ready(),
                 "segmentation_model": settings.reforge_model_segmentation,
                 "reasoning_model": settings.reforge_model_reasoning,
-                "busy": registry.active() >= settings.reforge_max_running_jobs}
+                "busy": registry.active() >= settings.reforge_max_running_jobs,
+                "started_at": STARTED_AT.isoformat(timespec="seconds"),
+                "uptime_s": round((datetime.now(UTC) - STARTED_AT).total_seconds(), 1)}
         if _ai_ready():
             from reforge.meta_api.client import Ledger
 
@@ -629,7 +632,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def main() -> None:
+    import copy
+
     import uvicorn
+    from uvicorn.config import LOGGING_CONFIG
 
     settings = get_settings()
-    uvicorn.run(create_app(settings), host=settings.reforge_host, port=settings.reforge_port)
+    log_config = copy.deepcopy(LOGGING_CONFIG)
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s %(levelprefix)s %(message)s"
+    log_config["formatters"]["access"]["fmt"] = (
+        "%(asctime)s %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s")
+    uvicorn.run(create_app(settings), host=settings.reforge_host, port=settings.reforge_port,
+                log_config=log_config)
