@@ -76,7 +76,9 @@ export interface Axis {
 }
 
 export interface Completion {
-  axis: string;
+  /** Optional: reports written before smooth bridges only know the mirror. */
+  method?: "mirror" | "bridge";
+  axis: string | null;
   added_area_mm2: number;
   inferred_u_mm_2sigma: number;
   inferred_outline_mm: number;

@@ -22,6 +22,7 @@ from tests.synthetic.scene import (
     broken_bracket,
     broken_flange,
     broken_pick,
+    broken_tab_plate,
     hero_bracket,
     make_camera,
     render_view,
@@ -258,3 +259,22 @@ def test_geometry_doesnt_rebuild_what_the_reading_calls_intact(tmp_path: Path) -
                                       ClassicalSegmenter(), job_id="intact", interpreter=_NotBrokenInterpreter()))
     assert report["reconstruction"]["completion"] is None
     assert "AXIS_CORRECTED" not in {n["code"] for n in report["reconstruction"]["verification"]}
+
+
+def test_asymmetric_corner_rebuilt_by_bridge_not_mirror(tmp_path: Path) -> None:
+    """No mirror axis survives on the tab plate, so the geometric rule's fracture must be closed by a smooth
+    bridge: the extended edges meet where the corner was, with no axis involved."""
+    out = tmp_path / "out"
+    report = asyncio.run(photo_to_stl(_photo(tmp_path, broken_tab_plate(LAYOUT)), out, 3.0,
+                                      ClassicalSegmenter(), job_id="bridge"))
+    completion = report["reconstruction"]["completion"]
+    assert completion is not None
+    assert completion["method"] == "bridge" and completion["axis"] is None
+    assert 15.0 < completion["added_area_mm2"] < 60.0  # the nominal corner triangle is ~40 mm²
+    assert any(r["status"] == "INFERRED" and "smooth bridge" in r["source"] for r in completion["runs"])
+    assert "BRIDGE" in {n["code"] for n in report["reconstruction"]["verification"]}
+    spec = json.loads((out / "spec.json").read_text())
+    pts = np.array(spec["outline"]["points"])
+    # The corner band, below the tab top (model frame, y up): the corner tip sits 12 mm under it.
+    band = pts[(pts[:, 1] > pts[:, 1].max() - 16.0) & (pts[:, 1] < pts[:, 1].max() - 8.0)]
+    assert band[:, 0].max() > 38.5, "the rebuilt corner must reach x = +40 where the photo shows ~+30"

@@ -73,7 +73,7 @@ class Run:
 
 @dataclass(frozen=True)
 class Completion:
-    axis: MirrorAxis
+    axis: MirrorAxis | None  # None for a smooth bridge (no mirror involved)
     points: np.ndarray  # completed outline, (n, 2), counter-clockwise
     runs: tuple[Run, ...]
     regions: tuple[Region, ...]
@@ -81,6 +81,9 @@ class Completion:
     hole_checks: tuple[HoleCheck, ...]
     asymmetric_holes: tuple[str, ...]  # holes whose mirror lands on solid, hole-free material
     confirmed_mm: float = 0.0  # evidence: outline whose mirror lands on the outline, plus matched holes' circumference
+    # (a bridge: the intact neighbour length the extensions stand on)
+    method: str = "mirror"  # "mirror" | "bridge"
+    bridge_u_mm: float = 0.0  # 2σ of the bridge corner/chord, from the neighbours' fit residuals (bridge only)
 
     @property
     def added_area_mm2(self) -> float:
@@ -100,7 +103,9 @@ class Completion:
     def inferred_uncertainty_mm(self) -> float:
         """2σ for mirrored geometry, before adding the source edge's own uncertainty (PLAN §6.6): the mirror's
         inlier RMS, the axis angle error times the lever arm to the added material, and twice the axis offset
-        error (a reflection doubles it)."""
+        error (a reflection doubles it). A bridge carries its own 2σ from the neighbours' fits."""
+        if self.method == "bridge" or self.axis is None:
+            return float(self.bridge_u_mm)
         a = self.axis
         lever = max((float(np.abs((np.asarray(r.polygon.exterior.coords) - a.point) @ a.normal).max())
                      for r in self.regions if r.filled), default=0.0)

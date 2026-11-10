@@ -84,8 +84,8 @@ export function Advanced({ id, report, files, request, health }: { id: string; r
                 <dt>Symmetry</dt><dd>{a.symmetry}{axis ? ` about ${axis.id} (support ${fmt(axis.support * 100, 0)} %, ${axis.holes_matched} holes matched)` : ""}{a.symmetry_reason ? ` · ${a.symmetry_reason}` : ""}</dd>
                 {r.completion && (
                   <>
-                    <dt>Rebuilt</dt><dd>{fmt(r.completion.added_area_mm2, 1)} mm² about {r.completion.axis} · mirror ±{fmt(r.completion.inferred_u_mm_2sigma, 3)} mm (2σ)</dd>
-                    <dt>Evidence</dt><dd>{fmt(r.completion.confirmed_mm, 0)} mm confirm the mirror, for {fmt(r.completion.inferred_outline_mm, 0)} mm it invents</dd>
+                    <dt>Rebuilt</dt><dd>{fmt(r.completion.added_area_mm2, 1)} mm²{(r.completion.method ?? "mirror") === "bridge" ? " by smooth bridge" : ` about ${r.completion.axis}`} · {(r.completion.method ?? "mirror") === "bridge" ? "bridge" : "mirror"} ±{fmt(r.completion.inferred_u_mm_2sigma, 3)} mm (2σ)</dd>
+                    <dt>Evidence</dt><dd>{fmt(r.completion.confirmed_mm, 0)} mm {(r.completion.method ?? "mirror") === "bridge" ? "of intact edges stand under the bridge" : "confirm the mirror"}, for {fmt(r.completion.inferred_outline_mm, 0)} mm it invents</dd>
                   </>
                 )}
               </dl>

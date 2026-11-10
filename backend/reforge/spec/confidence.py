@@ -144,6 +144,12 @@ def with_mirror(estimate: Estimate, mirror_u_2sigma_mm: float, axis_id: str) -> 
                                            f"mirror about {axis_id}: axis RMS, angle × lever arm, offset"),))
 
 
+def with_bridge(estimate: Estimate, bridge_u_2sigma_mm: float, source: str) -> Estimate:
+    """A BRIDGED quantity: the source geometry's uncertainty plus the bridge's own."""
+    return Estimate(estimate.terms + (Term("bridge", bridge_u_2sigma_mm / 2,
+                                           f"smooth bridge ({source}): neighbours' fit residuals"),))
+
+
 def min_rect_mm(points_mm: np.ndarray) -> tuple[float, float, float]:
     """Length ≥ width of the smallest rectangle around the outline, and its angle to the model x axis (degrees).
 

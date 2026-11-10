@@ -51,6 +51,7 @@ from reforge.spec.confidence import (
     Term,
     build_budget,
     min_rect_mm,
+    with_bridge,
     with_mirror,
 )
 from reforge.spec.partspec import (
@@ -139,7 +140,8 @@ def profile_to_spec(profile: RefinedProfile, thickness: Param, completion: Compl
                     ) -> tuple[PartSpec, list[dict], dict[str, dict[str, Estimate]]]:
     """The footprint as a PartSpec in the model frame, plus notes on anything left out.
 
-    With a ``completion``, the outline is the mirror-completed one with its provenance runs, and mirrored holes that
+    With a ``completion``, the outline is the completed one (mirror or smooth bridge) with its provenance
+    runs, and mirrored holes that
     land in the added material are included as INFERRED. With a ``budget``, every hole parameter carries its 2σ
     uncertainty (an INFERRED hole adds the mirror's own to its source hole's), and the third value holds each built
     hole's estimates, term by term, for the report."""
@@ -311,8 +313,12 @@ def _overlay(view: RectifiedView, profile: RefinedProfile, footprint: RefinedPro
             cv2.circle(out, tuple(int(v) for v in c), r, HALO_COLOUR, halo, cv2.LINE_AA)
             cv2.circle(out, tuple(int(v) for v in c), r, PROVENANCE_COLOURS["INFERRED"], thick, cv2.LINE_AA)
         axis = completion.axis
-        ends = to_px(np.array([np.asarray(axis.point) + t * axis.direction for t in (-60.0, 60.0)])).astype(float)
-        for t in np.arange(0.0, 1.0, 0.03):
+        if axis is None:  # a smooth bridge: no axis to draw
+            ends = None
+        else:
+            ends = to_px(np.array([np.asarray(axis.point) + t * axis.direction
+                                   for t in (-60.0, 60.0)])).astype(float)
+        for t in np.arange(0.0, 1.0, 0.03) if ends is not None else ():
             a, b = ends[0] + (ends[1] - ends[0]) * t, ends[0] + (ends[1] - ends[0]) * min(t + 0.015, 1.0)
             cv2.line(out, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), AXIS_COLOUR, thick,
                      cv2.LINE_AA)
@@ -371,7 +377,8 @@ def _reconstruction_report(recon: Reconstruction) -> dict:
     if c is not None:
         closed = np.vstack([c.points, c.points[:1]])
         completion = {
-            "axis": c.axis.axis_id, "added_area_mm2": round(c.added_area_mm2, 2),
+            "method": c.method, "axis": c.axis.axis_id if c.axis is not None else None,
+            "added_area_mm2": round(c.added_area_mm2, 2),
             "inferred_outline_mm": round(c.inferred_length_mm, 2), "confirmed_mm": round(c.confirmed_mm, 2),
             "inferred_u_mm_2sigma": round(c.inferred_uncertainty_mm(), 4),
             "extent_mm": _extent(c.points),
@@ -429,7 +436,12 @@ def _confidence_report(spec: PartSpec, budget: ErrorBudget, completion: Completi
 
     def size(value: float) -> Estimate:
         est = budget.length(value)
-        return with_mirror(est, completion.inferred_uncertainty_mm(), completion.axis.axis_id) if completion else est
+        if not completion:
+            return est
+        if completion.method == "bridge":
+            return with_bridge(est, completion.inferred_uncertainty_mm(), "extended intact edges")
+        assert completion.axis is not None  # a mirror completion always names its axis
+        return with_mirror(est, completion.inferred_uncertainty_mm(), completion.axis.axis_id)
 
     dims = [_dimension("length", "Length", length, status, size(length)),
             _dimension("width", "Width", width, status, size(width)),

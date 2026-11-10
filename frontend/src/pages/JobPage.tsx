@@ -168,7 +168,9 @@ function verdictOf(report: Report): Verdict {
   }
   if (r.completion) {
     return { kind: "rebuilt", title: "Rebuilt, ready for your check",
-      text: `The missing piece, ${fmt(r.completion.added_area_mm2, 0)} mm², was rebuilt as a mirror image of the intact side. It's shown in orange.` };
+      text: (r.completion.method ?? "mirror") === "bridge"
+        ? `The missing piece, ${fmt(r.completion.added_area_mm2, 0)} mm², was rebuilt by extending the intact edges beside the break. It's shown in orange.`
+        : `The missing piece, ${fmt(r.completion.added_area_mm2, 0)} mm², was rebuilt as a mirror image of the intact side. It's shown in orange.` };
   }
   if (a.is_broken && rejected.length) {
     return { kind: "not-rebuilt", title: "Built as photographed, not rebuilt",
@@ -388,8 +390,8 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
           </ul>
           {r.completion && (
             <p className="note note-ember">
-              <Evidence status="INFERRED" /> {fmt(r.completion.added_area_mm2, 0)} mm² rebuilt as a mirror image. {fmt(r.completion.confirmed_mm, 0)} mm of surviving
-              outline confirm the symmetry, for {fmt(r.completion.inferred_outline_mm, 0)} mm of edge it adds.
+              <Evidence status="INFERRED" /> {fmt(r.completion.added_area_mm2, 0)} mm² {(r.completion.method ?? "mirror") === "bridge" ? "rebuilt by extending the intact edges" : "rebuilt as a mirror image"}. {fmt(r.completion.confirmed_mm, 0)} mm of surviving
+              outline {(r.completion.method ?? "mirror") === "bridge" ? "stand under the bridge" : "confirm the symmetry"}, for {fmt(r.completion.inferred_outline_mm, 0)} mm of edge it adds.
             </p>
           )}
           {uncertainRuns.length > 0 && (

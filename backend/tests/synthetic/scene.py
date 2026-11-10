@@ -67,6 +67,37 @@ def broken_bracket(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, 
     return hero_bracket(layout, offset_mm=offset_mm).difference(cut)
 
 
+def tab_plate(layout: MatLayout, *, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """Deliberately asymmetric: an 80×28 plate with a 20×12 tab on the top-left and a 20×10 tab on the
+    bottom-right. No mirror axis reaches the support needed to rebuild here, so a break on it exercises
+    smooth-bridge completion, not the mirror."""
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    return unary_union([box(cx - 40, cy - 14, cx + 40, cy + 14), box(cx - 40, cy - 26, cx - 20, cy - 14),
+                        box(cx + 10, cy + 14, cx + 30, cy + 24)])
+
+
+def broken_tab_plate(layout: MatLayout, *, seed: int = 0, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
+    """The tab plate with its top-right corner snapped off along a rough fracture (millimetre meander plus
+    sub-millimetre roughness, reproducible by ``seed``)."""
+    from scipy.ndimage import gaussian_filter1d
+
+    x0, y0, x1, y1 = layout.free_zone_mm
+    cx, cy = (x0 + x1) / 2 + offset_mm[0], (y0 + y1) / 2 + offset_mm[1]
+    rng = np.random.default_rng(seed)
+    a = np.array([cx + 40.0, cy - 6.0])
+    b = np.array([cx + 30.0, cy - 14.0])
+    t = np.arange(0.0, 1.0001, 0.02)
+    raw = sum(f * np.sin(2 * np.pi * t * k + rng.uniform(0, 2 * np.pi)) for f, k in ((1.0, 2), (0.4, 5)))
+    meander = raw - raw[0] * (1 - t) - raw[-1] * t  # pinned at both ends
+    meander += gaussian_filter1d(rng.normal(0.0, 0.15, len(t)), 1.0) * t * (1 - t) * 4
+    normal = np.array([-(b - a)[1], (b - a)[0]])
+    normal /= np.linalg.norm(normal)
+    edge = [tuple(a + (b - a) * ti + normal * m) for ti, m in zip(t, meander, strict=True)]
+    cut = Polygon([*edge, (cx + 40.0, cy - 14.0)])
+    return tab_plate(layout, offset_mm=offset_mm).difference(cut)
+
+
 def bumper_bracket(layout: MatLayout, *, offset_mm: tuple[float, float] = (0.0, 0.0)) -> Polygon:
     """A 94×30 mm bumper mounting bracket: a 64×26 mm body with a Ø30 mounting ear at each end, one Ø5.0 hole
     per ear, 64 mm apart. Mirror-symmetric about both centre lines, like a stamped OEM guide bracket."""

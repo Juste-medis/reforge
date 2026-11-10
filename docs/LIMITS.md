@@ -10,6 +10,10 @@ unverified · 🧪 experimental · 📋 planned · ⛔ unsupported.
   ruler mode (plain background + the longest side entered by hand). Single colour preferred.
 - ✅ Through-holes (round, measured; traced shapes, built as photographed) and mirror-symmetry rebuilds of the
   missing material, with every dimension labelled MEASURED / INFERRED / UNCERTAIN and a modelled ±2σ.
+- ✅ Smooth-bridge reconstruction where no mirror applies: a broken corner or nick is closed by extending the
+  intact edges beside the break (fitted lines, arc end-tangents) to their intersection. Gated: clean long
+  neighbours, believable angle and reach, never cuts photographed material, adds at most 5 % / 500 mm².
+  No hole inference by bridge (v1): lost holes on a bridged part stay lost and are reported.
 - ✅ Machine-checked outputs: mesh checks before the write (`validation.mesh`), then the artifact verdict on the
   files as handed out (`validation.verdict` → `validation.json`, reloaded from disk, sha256-fingerprinted).
 - ✅ Refusals with a typed reason and a fix instead of a confident-looking wrong model (no mat, 3D object, pipe,

@@ -16,7 +16,7 @@
 <br>
 [![Meta SAM 3.1](https://img.shields.io/badge/Meta-SAM%203.1-0467DF?logo=meta&logoColor=white)](#how-the-ai-is-used)
 [![Meta Muse Spark](https://img.shields.io/badge/Meta-Muse%20Spark%201.3-0467DF?logo=meta&logoColor=white)](#how-the-ai-is-used)
-[![Tests](https://img.shields.io/badge/tests-204%20passed-brightgreen?logo=pytest&logoColor=white)](#tests)
+[![Tests](https://img.shields.io/badge/tests-212%20passed-brightgreen?logo=pytest&logoColor=white)](#tests)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 

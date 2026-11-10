@@ -17,6 +17,7 @@ import numpy as np
 
 from reforge.capture.calibration import RectifiedView
 from reforge.errors import ReforgeError
+from reforge.geometry.bridging import complete_by_bridge
 from reforge.geometry.completion import Completion, complete_by_mirror
 from reforge.geometry.segments import SegmentedOutline, segment_outline
 from reforge.geometry.symmetry import (
@@ -499,5 +500,16 @@ async def reconstruct(view: RectifiedView, footprint: RefinedProfile, interprete
                             "warning")
                 kept = tuple(n for n in verified.notes if n.code != "NO_FRACTURE")
                 verified = replace(retry, notes=kept + (note,) + tuple(n for n in retry.notes if n not in kept))
+    if completion is None and verified.fracture_ids:
+        # Last resort, no mirror involved: close the break by extending the intact edges beside it. The bridge's
+        # own gates judge every span; a span they refuse stays as photographed.
+        bridged, bridge_notes = complete_by_bridge(outline, segmented, list(verified.fracture_ids))
+        if bridged is not None:
+            completion = bridged
+            kept = tuple(n for n in verified.notes if n.code != "GUIDE_NO_AXIS")
+            verified = replace(verified, notes=kept + tuple(Note(*b) for b in bridge_notes))
+        elif bridge_notes:
+            code, message, _ = bridge_notes[0]
+            verified = replace(verified, notes=verified.notes + (Note(code, message, "info"),))
     return Reconstruction(segmented, tuple(axes), context, marked, facts, interpretation, fallback_reason, verified,
                           completion)
