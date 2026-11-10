@@ -67,6 +67,7 @@ from reforge.spec.partspec import (
     mat_to_model,
 )
 from reforge.validation.mesh import summarize, validate_part
+from reforge.validation.verdict import replay_score, sha256_file, validate_artifacts
 from reforge.vision.refine import Contour, RefinedProfile, refine_profile
 from reforge.vision.segment import Segmentation
 
@@ -241,7 +242,7 @@ OVERLAY_WIDTH_PX = 1400
 
 def _overlay(view: RectifiedView, profile: RefinedProfile, footprint: RefinedProfile,
              completion: Completion | None = None, trusted: frozenset[str] = frozenset(),
-             left_out: frozenset[str] = frozenset(),
+             left_out: frozenset[str] = frozenset(), caption: str | None = None,
              ) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float]]:
     """The rectified photo of the part, cropped and enlarged to about ``OVERLAY_WIDTH_PX`` (so lines stay sharp), and
     the same crop with what was measured drawn on it. Both share one framing, so the UI can compare them.
@@ -318,6 +319,13 @@ def _overlay(view: RectifiedView, profile: RefinedProfile, footprint: RefinedPro
     for h in footprint.holes:
         if not h.doubt or h.hole_id in trusted:
             line(to_px(h.contour.points_mm), PROVENANCE_COLOURS["OBSERVED"])
+    if caption:  # the replay score, bottom-left, readable on any part (the MuJoCo-replay pattern)
+        scale = max(0.6, out.shape[1] / 1400.0)
+        org = (int(20 * scale), out.shape[0] - int(20 * scale))
+        cv2.putText(out, caption, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), max(2, int(4 * scale)),
+                    cv2.LINE_AA)
+        cv2.putText(out, caption, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), max(1, int(2 * scale)),
+                    cv2.LINE_AA)
     return crop, out, (float(x0), float(y0), float(k))
 
 
@@ -680,7 +688,15 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
         built = {h.hole_id for h in height.profile.holes}
         left_out = frozenset(h.hole_id for h in profile.holes if h.hole_id not in built)
         drawn = profile_original if profile_original is not None else profile
-        crop, overlay, frame = _overlay(view, drawn, height.profile, recon.completion, trusted, left_out)
+        # Replay (one still frame, all mat frame): the built outline against the photographed one. A rebuild
+        # legitimately extends past it, so coverage is the headline; IoU drops honestly when it does.
+        final = (np.asarray(recon.completion.points) if recon.completion is not None
+                 else np.asarray(height.profile.outer.points_mm))
+        replay.update(replay_score(Polygon(np.asarray(drawn.outer.points_mm)), Polygon(final)))
+        caption = (f"built covers {replay['coverage']:.0%} of the photographed outline "
+                   f"(IoU {replay['iou']:.2f})")
+        crop, overlay, frame = _overlay(view, drawn, height.profile, recon.completion, trusted, left_out,
+                                        caption=caption)
         (out_dir / "frame.json").write_text(json.dumps(
             {"x0": frame[0], "y0": frame[1], "k": frame[2],
              "photo_size_px": [int(crop.shape[1]), int(crop.shape[0])]}, indent=2), encoding="utf-8")
@@ -694,8 +710,13 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
         # The Studio's candidates (axes, segments, all holes) survive success too: the user can steer the next run.
         (out_dir / "reconstruction.json").write_text(json.dumps(
             {"refused": None, **_reconstruction_report(recon)}, indent=2, default=str), encoding="utf-8")
+        # The second verdict, on the files as handed out (reloaded from disk, never the in-memory mesh).
+        mesh_size = tuple(float(b[1] - b[0]) for b in part.to_trimesh().bounds.T)
+        artifact.update(validate_artifacts(out_dir, expected_size_mm=mesh_size, photo_sha256=sha256_file(photo)))
 
     texture: dict = {}
+    replay: dict = {}
+    artifact: dict = {}
     await asyncio.to_thread(_write)
     end()
 
@@ -705,6 +726,7 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
     report = {
         "job_id": job_id,
         "photo": photo.name,
+        "photo_sha256": artifact.get("photo_sha256"),
         "milestone": "D5: measured geometry, height-corrected; mirror reconstruction; modelled 2σ for every dimension",
         "calibration": {"mode": "ruler" if ruler else "mat", "page": cal.page, "markers": len(cal.marker_ids),
                         "known_length_mm": known_length_mm,
@@ -750,12 +772,16 @@ async def photo_to_stl(photo: Path, out_dir: Path, thickness_mm: float, segmente
         "confidence": confidence,
         "texture": texture,
         "validation": validation,
+        "artifact": artifact,
+        "replay": {**replay, "note": ("outline level, in the mat frame: the built footprint against the photographed "
+                                      "outline; a rebuild legitimately extends past it, so coverage (not IoU) is the "
+                                      "headline number")},
         "timings_s": timings,
         "reconstruction": _reconstruction_report(recon),
         "family_overridden": family_overridden,
         "reshaped": reshape_info,
         "outputs": ["model.stl", "model.scad", "model.dxf", "model.svg", "spec.json", "photo.jpg", "texture.jpg",
-                    "overlay.png", "setofmark.png", "mask.png", "report.json"],
+                    "overlay.png", "setofmark.png", "mask.png", "report.json", "validation.json"],
         "disclaimer": "A reconstruction, not a verified replacement part. Not for safety-critical use.",
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")

@@ -4,6 +4,8 @@
 - A segment picked as a fracture must *not* match its mirror image under that axis: a smooth edge that does is
   intact, and the pick is rejected. A pick the geometry finds smooth (not irregular) is kept with a warning.
 - Irregular segments the model didn't pick, and an answer that contradicts itself, are reported.
+- A picked id that matches no drawn segment is rejected, never a crash (the schema and the parser already filter these;
+  this is the last line of defence).
 Rejected items never reach the reconstruction; every note is shown to the user.
 """
 
@@ -73,7 +75,12 @@ def verify(analysis: PartAnalysis, segmented: SegmentedOutline, axes: list[Mirro
 
     accepted: list[str] = []
     for sid in analysis.fracture_segment_ids:
-        seg = segmented.by_id(sid)
+        try:
+            seg = segmented.by_id(sid)
+        except KeyError:
+            notes.append(Note("FRACTURE_UNKNOWN", f"{sid} was picked as a fracture but no drawn segment has "
+                                                  "that id: not treated as a fracture.", "rejected"))
+            continue
         if axis is not None:
             matched = local_support(axis, segmented.span(seg), outline_mm)
             if matched > MAX_FRACTURE_MIRROR_SUPPORT:

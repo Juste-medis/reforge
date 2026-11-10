@@ -52,6 +52,7 @@ OUTPUTS = {
     "model.svg": "image/svg+xml",
     "spec.json": "application/json",
     "report.json": "application/json",
+    "validation.json": "application/json",
     "photo.jpg": "image/jpeg",
     "texture.jpg": "image/jpeg",
     "overlay.png": "image/png",

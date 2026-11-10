@@ -121,6 +121,18 @@ def test_intact_edge_called_a_fracture_is_rejected(broken) -> None:
     assert any(n.code == "FRACTURE_MATCHES_MIRROR" and n.level == "rejected" for n in result.notes)
 
 
+def test_fracture_id_never_drawn_is_rejected_not_a_crash(broken) -> None:
+    """Defence in depth (Gatekeeper validate.py pattern): the strict schema and the parser already reject unknown
+    ids, but if one ever reaches verify() it must be a rejected note, not a KeyError."""
+    so, axes, lengthwise, irregular = broken
+    bad = _analysis(so, axes, fracture_segment_ids=irregular,
+                    mirror_axis_id=lengthwise.axis_id).model_copy(
+                        update={"fracture_segment_ids": (*irregular, "S9")})
+    result = verify(bad, so, axes, so.points)
+    assert "S9" not in result.fracture_ids
+    assert any(n.code == "FRACTURE_UNKNOWN" and n.level == "rejected" for n in result.notes)
+
+
 def test_weak_axis_is_rejected_and_unpicked_fracture_reported(broken) -> None:
     so, axes, lengthwise, irregular = broken
     weak = [replace(a, support=0.5) if a.axis_id == lengthwise.axis_id else a for a in axes]

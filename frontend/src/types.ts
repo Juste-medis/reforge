@@ -194,9 +194,36 @@ export interface Validation {
   checks: Check[];
 }
 
+export interface ArtifactRow {
+  check: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+
+export interface Artifact {
+  artifact_status: "verified" | "needs_review" | "failed";
+  reasons: string[];
+  rows: ArtifactRow[];
+  files: Record<string, string | null>;
+  photo_sha256: string | null;
+  validated_at: string;
+}
+
+export interface Replay {
+  measured_area_mm2: number;
+  built_area_mm2: number;
+  coverage: number;
+  iou: number;
+  note: string;
+}
+
 export interface Report {
   job_id: string;
   photo: string;
+  /** Optional: reports written before the artifact verdict don't have these. */
+  photo_sha256?: string | null;
+  artifact?: Artifact;
+  replay?: Replay;
   milestone: string;
   calibration: Calibration;
   segmentation: Segmentation;

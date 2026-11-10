@@ -161,6 +161,18 @@ export function Advanced({ id, report, files, request, health }: { id: string; r
         <article className="card">
           <h3 className="card-title">Validation</h3>
           <ul className="vchecks">{report.validation.checks.map((c) => <CheckRow key={c.name} check={c} />)}</ul>
+          {report.artifact && (
+            <>
+              <h4 className="mini-title">Files as handed out: {report.artifact.artifact_status.replace("_", " ")}</h4>
+              <ul className="vchecks">{report.artifact.rows.map((row) => <CheckRow key={row.check} check={{ name: row.check, passed: row.status === "pass", detail: row.detail, severity: row.status === "warn" ? "warning" : "error" }} />)}</ul>
+              <dl className="kv">
+                {report.replay && <><dt>Replay</dt><dd>built covers {(report.replay.coverage * 100).toFixed(1)}% of the photographed outline (IoU {report.replay.iou.toFixed(2)})</dd></>}
+                <dt>Photo sha256</dt><dd><code>{(report.photo_sha256 ?? report.artifact.photo_sha256 ?? "—").slice(0, 16)}…</code></dd>
+                <dt>STL sha256</dt><dd><code>{(report.artifact.files["model.stl"] ?? "—").slice(0, 16)}…</code></dd>
+                <dt>Checked</dt><dd>{report.artifact.validated_at}{files["validation.json"] && <> · <a href={files["validation.json"]} download>validation.json</a></>}</dd>
+              </dl>
+            </>
+          )}
         </article>
 
         <article className="card">

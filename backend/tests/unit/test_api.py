@@ -59,6 +59,14 @@ def test_job_round_trip(client: TestClient, photo_bytes: bytes, tmp_path: Path) 
     mesh = trimesh.load(io.BytesIO(stl.content), file_type="stl")
     assert mesh.is_watertight
     assert client.get(body["files"]["overlay.png"]).headers["content-type"] == "image/png"
+    report = body["report"]
+    assert report["artifact"]["artifact_status"] == "verified"  # the second verdict, on the disk files
+    assert report["artifact"]["files"]["model.stl"] is not None
+    assert len(report["photo_sha256"]) == 64  # the STL is bound to its source photo
+    # Intact synthetic part: the built footprint is the photographed outline moved by the height correction.
+    assert report["replay"]["coverage"] > 0.95
+    served = client.get(body["files"]["validation.json"])
+    assert served.status_code == 200 and served.json()["artifact_status"] == "verified"
     stored = tmp_path / "data" / "jobs" / body["job_id"] / "input.png"
     assert stored.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 

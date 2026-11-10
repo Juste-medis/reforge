@@ -353,6 +353,7 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
           <div><dt>Size</dt><dd>{fmt(size.length, 1)} × {fmt(size.width, 1)} <span className="unit">mm</span><span className="stat-note">{fmt(size.thickness, 2)} mm thick</span></dd></div>
           <div><dt>Holes</dt><dd>{holes.length}</dd></div>
           <div><dt>Accuracy</dt><dd>{sizeU ? <>{pm(sizeU)} <span className="unit">mm</span></> : "—"}<span className="stat-note">estimated</span></dd></div>
+          {report.artifact && <div><dt>Files</dt><dd>{report.artifact.artifact_status === "verified" ? "Verified" : report.artifact.artifact_status === "needs_review" ? "Needs review" : "Failed"}<span className="stat-note">reloaded from disk</span></dd></div>}
         </dl>
       </section>
 
@@ -375,6 +376,7 @@ function Result({ status, report, files, health }: { status: JobStatus; report: 
             {(uncertainRuns.length > 0) && <span><i className="sw sw-uncertain" /> uncertain</span>}
             {excluded.length > 0 && <span><i className="sw sw-left-out" /> hole left out</span>}
           </p>
+          {report.replay && <p className="muted small">Built covers {(report.replay.coverage * 100).toFixed(0)}% of the photographed outline (IoU {report.replay.iou.toFixed(2)}).</p>}
         </section>
       </div>
 

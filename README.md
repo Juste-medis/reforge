@@ -16,7 +16,7 @@
 <br>
 [![Meta SAM 3.1](https://img.shields.io/badge/Meta-SAM%203.1-0467DF?logo=meta&logoColor=white)](#how-the-ai-is-used)
 [![Meta Muse Spark](https://img.shields.io/badge/Meta-Muse%20Spark%201.3-0467DF?logo=meta&logoColor=white)](#how-the-ai-is-used)
-[![Tests](https://img.shields.io/badge/tests-196%20passed-brightgreen?logo=pytest&logoColor=white)](#tests)
+[![Tests](https://img.shields.io/badge/tests-204%20passed-brightgreen?logo=pytest&logoColor=white)](#tests)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
@@ -94,6 +94,18 @@ cd backend && uv sync && uv run reforge-api
 
 No mat printed yet? Open **Examples** on the home page and run one: rendered parts with an exact truth, real part
 photos composited on the mat, and user photos with stored Studio guidance, each labelled for what it is.
+
+### Reviewer path (no key, 5 minutes)
+
+No API key, no printer, no mat needed. Every step below runs offline and says so in the UI.
+
+1. Start the app (commands above) and open the home page.
+2. Run an **Example**: pick the broken sprocket, watch the stages run for real, then read the verdict.
+3. On the result page, check the Files verdict (the STL reloaded from disk), the replay line under the
+   before/after slider (how much of the photo the model covers), and **Show technical details** → Validation
+   (every check, the photo and STL fingerprints, `validation.json`).
+4. For the honest boundaries, read [`docs/LIMITS.md`](docs/LIMITS.md): what is covered, what is refused,
+   and where the numbers come from.
 
 ### Docker
 
@@ -192,6 +204,7 @@ the STL: `cd tools/scad-check && npm install`, then `cd backend && uv run python
 | ⛔ | Rounded, hollow or 3D parts, threads, multi-thickness parts, safety-critical parts |
 
 Measured numbers, with their dates and conditions, are in [`docs/EVALUATION.md`](docs/EVALUATION.md).
+What the tool refuses to do, and why, is in [`docs/LIMITS.md`](docs/LIMITS.md).
 
 ## Known limitations
 
